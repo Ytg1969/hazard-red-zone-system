@@ -1,0 +1,4 @@
+shelter_id,name,latitude,longitude,total_capacity,current_occupancy,water_capacity,sanitation_capacity,access_capacity,effective_capacity,available_capacity,safety_score,accessibility_score,last_updated,data_mode
+S001,Demo Government School,20.2850,85.8600,1200,250,950,1000,900,,,92,85,2026-08-24T00:00:00Z,DEMO
+S002,Demo Community Hall,20.3250,85.8950,800,150,700,650,720,,,88,78,2026-08-24T00:00:00Z,DEMO
+S003,Demo Relief Shelter,20.3600,85.9300,1500,400,1300,1200,1250,,,95,82,2026-08-24T00:00:00Z,DEMO
