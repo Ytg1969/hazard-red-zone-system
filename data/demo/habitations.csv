@@ -1,0 +1,4 @@
+habitation_id,state_code,district_code,village_code,name,latitude,longitude,population,children_population,elderly_population,hazard_score,exposure_score,vulnerability_score,accessibility_score,risk_score,risk_level,relocation_priority,data_timestamp,data_mode
+H001,OD,DEMO,V001,Demo Village A,20.2700,85.8400,1850,410,230,88,82,34.59,72,,, ,2026-08-24T00:00:00Z,DEMO
+H002,OD,DEMO,V002,Demo Village B,20.3000,85.8800,920,210,85,61,54,32.07,40,,, ,2026-08-24T00:00:00Z,DEMO
+H003,OD,DEMO,V003,Demo Village C,20.3400,85.9000,1250,250,140,35,42,31.20,30,,, ,2026-08-24T00:00:00Z,DEMO
