@@ -6,30 +6,84 @@ A Streamlit-based geospatial decision-support prototype for identifying hazard-b
 
 `Data → GIS Exposure → Vulnerability → Risk → Carrying Capacity → Routing → Relocation → Dashboard → Draft Action Plan`
 
-## Current foundation
+## Current implementation status
 
-- Frozen habitation and shelter data contracts
-- Explainable weighted risk engine with configurable weights
-- Limiting-resource carrying-capacity logic
-- Offline-safe straight-line routing fallback
-- Safe-shelter recommendation contract
-- LIVE / CACHED / DEMO data-mode contract
-- Demonstration datasets for offline operation
-- Streamlit page skeletons for Command Center, Red Zone Map, Risk Analysis, Relocation Planner, Scenario Studio and Methodology
-- Foundation tests and team documentation
+The repository is being built in two stacked layers:
 
-## Important limitation
+1. `feature/architecture-v2` / PR #9 — shared foundation, data contracts, tests, documentation and CI.
+2. `feature/core-demo-v1` / PR #10 — first complete offline end-to-end demonstration.
 
-This project is a decision-support prototype. It must not be presented as an autonomous evacuation-order system. Live integrations, real road-network routing, official shelter inventories and optional ML validation are added incrementally and must always expose source/freshness information.
+The core demo currently includes:
+
+- frozen habitation and shelter data contracts;
+- deterministic offline demonstration data;
+- synthetic GeoJSON hazard polygons for GIS pipeline testing;
+- vector hazard intersection/proximity scoring;
+- explainable weighted risk scoring with configurable weights;
+- vulnerability scoring and phased relocation priority;
+- limiting-resource carrying capacity with VALIDATED / PARTIAL / UNVALIDATED status;
+- multi-criteria shelter ranking;
+- capacity-safe multi-shelter population allocation;
+- cached OSM GraphML routing support with a clearly labelled haversine fallback;
+- Command Center, Red Zone Map, Risk Analysis, Relocation Planner, Scenario Studio and Methodology pages;
+- draft action-plan export;
+- LIVE / CACHED / DEMO data-mode infrastructure;
+- automated tests and GitHub Actions CI.
+
+## Data honesty
+
+Bundled hazard polygons, habitation records and shelter records are demonstration data unless explicitly replaced by an authoritative source. The UI must never present `DEMO` or `CACHED` data as `LIVE`.
+
+Synthetic data is used to test the system pipeline and UI. It must not be used to claim scientific model accuracy or real-world hazard validation.
+
+## Risk model
+
+Default explainable score:
+
+`Risk = 0.35 × Hazard + 0.25 × Exposure + 0.25 × Vulnerability + 0.15 × Evacuation Difficulty`
+
+All factors are bounded to 0–100 and weights must sum to 1.00.
+
+Risk classes:
+
+- LOW: 0–29
+- MODERATE: 30–49
+- HIGH: 50–69
+- CRITICAL: 70–100
+
+## Carrying capacity
+
+Where resource information exists:
+
+`effective_capacity = min(total, water, sanitation, access)`
+
+`available_capacity = max(0, effective_capacity - current_occupancy)`
+
+Capacity status:
+
+- `VALIDATED` — all defined resource constraints are available;
+- `PARTIAL` — only some resource constraints are available;
+- `UNVALIDATED` — total physical capacity is being used as fallback.
 
 ## Install
+
+### Recommended: Conda / Miniforge
+
+```bash
+conda env create -f environment.yml
+conda activate hazard-red-zone
+```
+
+### Pip alternative
 
 ```bash
 python -m venv venv
 # Windows
 venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+Python 3.12 is the recommended shared/CI version for the geospatial stack.
 
 ## Run
 
@@ -43,6 +97,28 @@ streamlit run app.py
 python -m pytest tests
 ```
 
+## Generate a larger synthetic demo dataset
+
+```bash
+python scripts/generate_demo_data.py --habitations 200 --shelters 20
+```
+
+Generated records are DEMO-only.
+
+## Cache a road network before the demo
+
+```bash
+python scripts/cache_road_network.py "Cuttack, Odisha, India"
+```
+
+Then point the routing engine at the resulting GraphML file:
+
+```powershell
+$env:SIH_ROAD_GRAPHML="data/cache/roads/Cuttack_Odisha_India.graphml"
+```
+
+The app automatically falls back to haversine distance if the cache is unavailable.
+
 ## Team branches
 
 - `feature/data`
@@ -51,7 +127,18 @@ python -m pytest tests
 - `feature/relocation`
 - `feature/dashboard`
 - `feature/integration`
+- `feature/architecture-v2`
+- `feature/core-demo-v1`
 
-Shared contracts and architecture changes are proposed through `feature/architecture-v2` before being merged to `main`.
+No direct feature development should occur on `main`.
 
-See `docs/team_plan.md`, `docs/data_dictionary.md`, `docs/architecture.md`, and `docs/data_sources.md` before implementing modules.
+## Important limitations
+
+- This is a decision-support prototype, not an autonomous evacuation-order system.
+- Current bundled hazard polygons are synthetic demonstration layers.
+- Road conditions and shelter occupancy must be revalidated during real emergencies.
+- Live IMD / NDMA / CWC integrations require verified source access and source-specific adapters.
+- Optional ML validation should only be added when credible historical labels and leakage-safe validation are available.
+- Raw InSAR processing is outside the seven-day core; preprocessed deformation layers can be integrated later.
+
+See `docs/team_plan.md`, `docs/data_dictionary.md`, `docs/architecture.md`, `docs/data_sources.md`, `docs/risk_methodology.md`, and `docs/demo_script.md` before changing shared interfaces.
