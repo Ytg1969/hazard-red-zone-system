@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from src.pipeline import enrich_habitations, load_demo_data
+from src.pipeline import enrich_habitations, load_demo_data, load_demo_hazards
 from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
 from src.ui_theme import (
     inject_global_css,
@@ -22,7 +22,11 @@ render_data_mode_indicator("DEMO")
 
 try:
     habitations_raw, _ = load_demo_data()
-    habitations = enrich_habitations(habitations_raw)
+    try:
+        hazards = load_demo_hazards()
+    except Exception:
+        hazards = None
+    habitations = enrich_habitations(habitations_raw, hazard_data=hazards)
 except Exception:
     st.error("Unable to calculate habitation risk from the demonstration dataset.")
     render_disclaimer()
@@ -38,9 +42,12 @@ with left:
     st.subheader(habitation["name"])
     render_risk_badge(risk["risk_level"])
     st.metric("Risk Score", f"{risk['risk_score']:.1f}/100")
+    st.metric("Hazard Score", f"{risk['components']['hazard']:.1f}/100")
     st.metric("Population", f"{int(habitation['population']):,}")
     st.metric("Vulnerable Population", f"{int(habitation['children_population'] + habitation['elderly_population']):,}")
     st.metric("Relocation Priority", habitation["relocation_priority"])
+    if habitation.get("hazard_type"):
+        st.caption(f"Nearest/intersecting hazard type: {habitation['hazard_type']}")
 
 with right:
     component_labels = {
@@ -107,7 +114,7 @@ st.dataframe(
     hide_index=True,
     column_config={
         "Raw Score": st.column_config.NumberColumn(format="%.1f"),
-        "Weight": st.column_config.NumberColumn(format="%.0%%"),
+        "Weight": st.column_config.NumberColumn(format="%.0f%%"),
         "Contribution": st.column_config.NumberColumn(format="%.1f"),
     },
 )
