@@ -8,12 +8,9 @@ A Streamlit-based geospatial decision-support prototype for identifying hazard-b
 
 ## Current implementation status
 
-The repository is being built in two stacked layers:
+The stable offline core demo is merged to `main` and is the recommended presentation baseline.
 
-1. `feature/architecture-v2` / PR #9 — shared foundation, data contracts, tests, documentation and CI.
-2. `feature/core-demo-v1` / PR #10 — first complete offline end-to-end demonstration.
-
-The core demo currently includes:
+The core demo includes:
 
 - frozen habitation and shelter data contracts;
 - deterministic offline demonstration data;
@@ -29,6 +26,31 @@ The core demo currently includes:
 - draft action-plan export;
 - LIVE / CACHED / DEMO data-mode infrastructure;
 - automated tests and GitHub Actions CI.
+
+## Demo now
+
+On Windows PowerShell:
+
+```powershell
+cd C:\Users\<user>\Project\hazard-red-zone-system
+git fetch origin
+git checkout main
+git pull origin main
+py -3.13 scripts/demo_gate.py
+py -3.13 -m pytest tests -q
+py -3.13 -m streamlit run app.py
+```
+
+`demo_gate.py` validates the deterministic offline path, including risk scoring, shelter capacity, safe-shelter recommendation, multi-shelter allocation accounting and draft action-plan generation. It should report `"demo_ready": true` before the presentation.
+
+Recommended 3-minute flow:
+
+1. **Operational Overview** — show EOC KPIs and the highest-risk habitation.
+2. **Red Zone Map** — show spatial red-zone identification.
+3. **Risk Analysis** — explain the factor contributions behind the score.
+4. **Relocation Planner** — show safe-shelter filtering, capacity-aware allocation and routing mode.
+5. **Scenario Studio** — optionally adjust weights and show classification sensitivity.
+6. **Draft Action Plan** — export the administrative decision-support output.
 
 ## Data honesty
 
@@ -83,7 +105,7 @@ venv\Scripts\activate
 python -m pip install -r requirements.txt
 ```
 
-Python 3.12 is the recommended shared/CI version for the geospatial stack.
+Python 3.12 is the recommended shared/CI version for the geospatial stack. Python 3.13 can be used locally when the environment installs cleanly.
 
 ## Run
 
@@ -108,29 +130,22 @@ Generated records are DEMO-only.
 ## Cache a road network before the demo
 
 ```bash
-python scripts/cache_road_network.py "Cuttack, Odisha, India"
+python scripts/cache_road_network.py "Puri, Odisha, India"
 ```
 
 Then point the routing engine at the resulting GraphML file:
 
 ```powershell
-$env:SIH_ROAD_GRAPHML="data/cache/roads/Cuttack_Odisha_India.graphml"
+$env:SIH_ROAD_GRAPHML="data/cache/roads/Puri_Odisha_India.graphml"
 ```
 
 The app automatically falls back to haversine distance if the cache is unavailable.
 
-## Team branches
+## Development branches
 
-- `feature/data`
-- `feature/spatial`
-- `feature/risk`
-- `feature/relocation`
-- `feature/dashboard`
-- `feature/integration`
-- `feature/architecture-v2`
-- `feature/core-demo-v1`
+Create new work from the latest `main`. Old implementation branches that have already been merged are not the working baseline.
 
-No direct feature development should occur on `main`.
+Current authoritative-pilot development continues separately on `feature/odisha-pilot-data` so incomplete real-data fields cannot destabilize the demo.
 
 ## Important limitations
 
