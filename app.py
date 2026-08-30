@@ -1,6 +1,12 @@
 import streamlit as st
 
-from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
+from src.pipeline import (
+    calculate_summary,
+    enrich_habitations,
+    enrich_shelters,
+    load_demo_data,
+    load_demo_hazards,
+)
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -26,13 +32,18 @@ render_data_mode_indicator("DEMO")
 
 try:
     habitations_raw, shelters_raw = load_demo_data()
-    habitations = enrich_habitations(habitations_raw)
+    try:
+        hazards = load_demo_hazards()
+    except Exception:
+        hazards = None
+
+    habitations = enrich_habitations(habitations_raw, hazard_data=hazards)
     shelters = enrich_shelters(shelters_raw)
     summary = calculate_summary(habitations, shelters)
 except Exception:
     st.error(
-        "The demonstration data could not be loaded. Confirm that data/demo/habitations.csv "
-        "and data/demo/shelters.csv are present and match the frozen data contracts."
+        "The demonstration data could not be loaded. Confirm that the files in data/demo/ "
+        "are present and match the frozen data contracts."
     )
     render_disclaimer()
     st.stop()
@@ -62,6 +73,9 @@ with left:
             f"Relocation priority: **{top['relocation_priority']}**"
         )
         st.write(f"Primary risk drivers: **{top['risk_drivers']}**")
+        if top.get("inside_hazard_zone") is not None:
+            location_status = "Inside demonstration hazard polygon" if top["inside_hazard_zone"] else "Outside demonstration hazard polygon"
+            st.caption(location_status)
     with c2:
         render_risk_badge(top["risk_level"])
 
@@ -75,7 +89,7 @@ with left:
         hide_index=True,
         column_config={
             "name": "Habitation",
-            "population": st.column_config.NumberColumn("Population", format=",") ,
+            "population": st.column_config.NumberColumn("Population", format="%d"),
             "risk_score": st.column_config.NumberColumn("Risk Score", format="%.1f"),
             "risk_level": "Risk Level",
             "relocation_priority": "Relocation Priority",
@@ -96,6 +110,10 @@ with right:
 
     st.markdown("#### System status")
     st.success("Offline demonstration pipeline is available.")
+    if hazards is not None:
+        st.success("Synthetic GIS hazard polygons loaded for pipeline testing.")
+    else:
+        st.warning("GIS hazard layer unavailable; stored demonstration hazard scores are being used.")
     st.info(
         "Live IMD / NDMA / CWC adapters are intentionally separate. Until connected and verified, "
         "the application must continue to display DEMONSTRATION DATA."
