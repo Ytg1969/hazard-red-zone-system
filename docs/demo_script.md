@@ -2,31 +2,48 @@
 
 ## Before judging
 
-1. Pull the final tested commit on both primary and backup laptops.
+1. Pull the final tested `main` commit on both primary and backup laptops.
 2. Activate the same Python/Conda environment on both machines.
-3. Run `python -m pytest tests`.
-4. Run `streamlit run app.py` once and open every page.
-5. Disconnect internet and repeat the core workflow using `data/demo/`.
-6. If road routing is part of the final demo, pre-cache the selected district:
+3. Run the offline gate:
 
    ```bash
-   python scripts/cache_road_network.py "Cuttack, Odisha, India"
+   python scripts/demo_gate.py
+   ```
+
+   It must report `"demo_ready": true`.
+
+4. Run the full automated suite:
+
+   ```bash
+   python -m pytest tests -q
+   ```
+
+5. Run `streamlit run app.py` and open every page once.
+6. Disconnect internet and repeat the core workflow using `data/demo/`.
+7. If road routing is part of the final demo, pre-cache Puri:
+
+   ```bash
+   python scripts/cache_road_network.py "Puri, Odisha, India"
    ```
 
    Then configure the GraphML path on the demo machine, for example in PowerShell:
 
    ```powershell
-   $env:SIH_ROAD_GRAPHML="data/cache/roads/Cuttack_Odisha_India.graphml"
+   $env:SIH_ROAD_GRAPHML="data/cache/roads/Puri_Odisha_India.graphml"
    ```
 
-7. Verify the UI still clearly says DEMONSTRATION DATA unless a live adapter has actually been connected and verified.
-8. Keep a 2–3 minute screen recording of the successful core demo as a last-resort backup.
+8. Verify the UI still clearly says DEMO unless a source has actually been connected and verified.
+9. Keep a short screen recording of the successful core demo as a last-resort backup.
+
+## Opening line
+
+> Our system combines GIS-based hazard exposure, population vulnerability, evacuation difficulty, shelter capacity and routing to identify red zones and generate explainable, capacity-aware relocation recommendations for disaster authorities.
 
 ## Three-minute core path
 
 ### 1. Operational Overview — 30 sec
 
-- State the problem in one sentence: authorities need to know who is at risk, who moves first, where they should move and whether the destination can support them.
+- State the problem: authorities need to know who is at risk, who moves first, where they should move and whether the destination can support them.
 - Point to Data Mode.
 - Show Habitations Monitored, Critical Red Zones, Population at Risk and Available Shelter Capacity.
 
@@ -35,28 +52,28 @@
 - Open Red Zone Map.
 - Explain that the bundled hazard polygons are synthetic DEMO layers used to prove the GIS pipeline offline.
 - Select the highest-risk habitation.
-- Show risk class, population and whether the habitation intersects the demonstration hazard footprint.
+- Show risk class, population and whether the habitation intersects or lies close to the demonstration hazard footprint.
 
 ### 3. Risk Analysis — 35 sec
 
 - Open the same habitation.
 - Show the 0–100 risk score.
-- Explain weighted contributions in plain language.
-- State that the model is explainable and administrators can inspect the drivers.
+- Explain the weighted contributions: hazard, exposure, vulnerability and evacuation difficulty.
+- Emphasize that administrators can inspect why the location received its class.
 
 ### 4. Relocation Planner — 50 sec
 
 - Select the same habitation.
-- Show that unsafe/full shelters are filtered.
-- Compare suitability, safety, distance and capacity.
-- Show primary shelter recommendation.
+- Show that unsafe or full shelters are filtered out.
+- Compare safety, capacity adequacy, accessibility and travel distance.
+- Show the primary shelter recommendation.
 - Show multi-shelter allocation and any remaining deficit.
-- Point out the routing mode: cached road network if configured, otherwise clearly-labelled haversine fallback.
+- Point out routing mode: cached road network when configured, otherwise clearly labelled haversine fallback.
 
 ### 5. Close — 30 sec
 
-- Explain that the tool adds decisions on top of GIS visualization: risk, capacity and phased relocation.
-- Mention LIVE/CACHED/DEMO source handling, offline resilience and the ability to integrate official state/national data.
+- Explain that the system goes beyond GIS visualization by converting layers into risk priority, explanations and capacity-aware relocation recommendations.
+- Mention LIVE/CACHED/DEMO source handling and offline resilience.
 - State that it is decision support, not an autonomous evacuation order.
 
 Target core duration: **about 3 minutes**.
@@ -67,28 +84,31 @@ Add these between Risk Analysis and Relocation Planner:
 
 ### Scenario Studio — 30 sec
 
-- Choose Hazard Priority or adjust one slider.
+- Choose a preset or adjust one weight.
 - Show automatic weight normalization.
-- Show how many locations changed class and the population affected.
+- Show how classification and affected population change under the scenario.
 
 After Relocation Planner:
 
 ### Draft Action Plan — 20 sec
 
-- Download/preview the Markdown action plan.
-- Point out source/data mode, risk, primary shelter, capacity allocation and disclaimer.
+- Download/preview the draft Markdown action plan.
+- Point out data mode, risk, primary shelter, capacity allocation and disclaimer.
 
-## Day 6.5 rehearsal gate
+## Differentiator line
 
-Run the complete demo with a stopwatch.
+> A normal GIS dashboard shows layers. Our system converts those layers into explainable risk priorities, capacity-constrained shelter allocation and a draft relocation action plan.
 
-- If the core path is above 3.5 minutes, shorten narration before Day 7.
-- Do not remove the Overview, Red Zone Map, Risk Analysis or Relocation Planner from the core path.
-- Scenario Studio and export can be trimmed live if the judging slot is shorter than expected.
+## Final rehearsal gate
+
+- If the core path is above 3.5 minutes, shorten narration.
+- Do not remove Operational Overview, Red Zone Map, Risk Analysis or Relocation Planner from the core path.
+- Scenario Studio and export can be trimmed if the judging slot is shorter.
+- Repeat the full flow once with Wi-Fi disabled.
 
 ## Failure handling during the pitch
 
-- **Live API unavailable:** switch to cached or DEMO mode and say so explicitly.
+- **Live API unavailable:** continue in CACHED or DEMO mode and say so explicitly.
 - **Road graph unavailable:** continue with haversine fallback and show the routing-mode label.
 - **Map tile internet issue:** core risk/capacity tables still work; do not stop the demo.
 - **Primary laptop failure:** switch to the pre-tested backup laptop.
