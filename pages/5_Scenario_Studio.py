@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from src.pipeline import enrich_habitations, load_demo_data
+from src.pipeline import enrich_habitations, load_demo_data, load_demo_hazards
 from src.risk_engine import DEFAULT_WEIGHTS
 from src.ui_theme import (
     inject_global_css,
@@ -21,6 +21,10 @@ render_data_mode_indicator("DEMO")
 
 try:
     habitations_raw, _ = load_demo_data()
+    try:
+        hazards = load_demo_hazards()
+    except Exception:
+        hazards = None
 except Exception:
     st.error("Unable to load the demonstration habitation dataset.")
     render_disclaimer()
@@ -68,8 +72,8 @@ st.caption(
     + " · ".join(f"{labels[k]} {v:.0%}" for k, v in normalized.items())
 )
 
-baseline = enrich_habitations(habitations_raw, weights=DEFAULT_WEIGHTS)
-scenario = enrich_habitations(habitations_raw, weights=normalized)
+baseline = enrich_habitations(habitations_raw, weights=DEFAULT_WEIGHTS, hazard_data=hazards)
+scenario = enrich_habitations(habitations_raw, weights=normalized, hazard_data=hazards)
 
 comparison = baseline[
     ["habitation_id", "name", "population", "risk_score", "risk_level"]
@@ -89,14 +93,8 @@ population_affected = int(changed["population"].sum())
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Locations Changed Class", int(changed.shape[0]))
 m2.metric("Population Affected", f"{population_affected:,}")
-m3.metric(
-    "Baseline Critical",
-    int((comparison["baseline_level"] == "CRITICAL").sum()),
-)
-m4.metric(
-    "Scenario Critical",
-    int((comparison["scenario_level"] == "CRITICAL").sum()),
-)
+m3.metric("Baseline Critical", int((comparison["baseline_level"] == "CRITICAL").sum()))
+m4.metric("Scenario Critical", int((comparison["scenario_level"] == "CRITICAL").sum()))
 
 st.divider()
 left, right = st.columns(2, gap="large")
