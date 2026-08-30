@@ -1,7 +1,7 @@
-"""Run a lightweight pre-presentation gate for the offline SIH demo.
+"""Run a pre-presentation gate for the deterministic offline SIH demo.
 
-This check intentionally validates the deterministic DEMO path only. It does not
-claim that the authoritative Puri pilot is complete.
+This validates the full DEMO decision-support path without claiming that the
+authoritative Puri pilot is complete.
 """
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ from src.pipeline import (
     load_demo_data,
     load_demo_hazards,
 )
+from src.relocation import allocate_population, recommend_shelter
+from src.report_generator import generate_action_plan
+from src.risk_engine import calculate_risk
 
 
 REQUIRED_PAGES = [
@@ -50,6 +53,42 @@ def run_demo_gate() -> dict:
     if not set(habitations["risk_level"]).issubset({"LOW", "MODERATE", "HIGH", "CRITICAL"}):
         raise RuntimeError("unexpected risk class produced")
 
+    top = habitations.sort_values("risk_score", ascending=False).iloc[0].to_dict()
+    shelter_records = shelters.to_dict(orient="records")
+    relocation = recommend_shelter(top, shelter_records)
+    if relocation is None:
+        raise RuntimeError("no valid shelter recommendation for the highest-risk habitation")
+    if float(relocation.get("available_capacity", 0)) <= 0:
+        raise RuntimeError("recommended shelter has no available capacity")
+
+    allocation = allocate_population(top, shelter_records)
+    required = int(allocation["required_population"])
+    allocated = int(allocation["allocated_population"])
+    deficit = int(allocation["remaining_deficit"])
+    if allocated > required or allocated + deficit != required:
+        raise RuntimeError("multi-shelter allocation violates population accounting")
+    for item in allocation.get("allocations", []):
+        if int(item["assigned_population"]) > int(item["available_capacity"]):
+            raise RuntimeError("allocation exceeds shelter available capacity")
+
+    risk = calculate_risk(top)
+    action_plan = generate_action_plan(
+        habitation=top,
+        risk=risk,
+        relocation=relocation,
+        allocation=allocation,
+        data_mode="DEMO",
+    )
+    required_report_text = [
+        "Draft Disaster Response Action Plan",
+        "Data mode: DEMO",
+        "Risk Assessment",
+        "Primary Relocation Recommendation",
+        "Decision-support disclaimer",
+    ]
+    if not all(text in action_plan for text in required_report_text):
+        raise RuntimeError("draft action-plan export is incomplete")
+
     return {
         "demo_ready": True,
         "data_mode": "DEMO",
@@ -58,6 +97,12 @@ def run_demo_gate() -> dict:
         "critical_red_zones": summary["critical_red_zones"],
         "population_at_risk": summary["population_at_risk"],
         "available_shelter_capacity": int(summary["available_shelter_capacity"]),
+        "sample_habitation": str(top["name"]),
+        "sample_recommended_shelter": str(relocation["shelter_name"]),
+        "sample_required_population": required,
+        "sample_allocated_population": allocated,
+        "sample_remaining_deficit": deficit,
+        "action_plan_export": "PASS",
         "required_pages": [str(path) for path in REQUIRED_PAGES],
     }
 
