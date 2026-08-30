@@ -133,6 +133,55 @@ def attach_coordinates(
     return merged
 
 
+def attach_vulnerability_demographics(
+    staged: pd.DataFrame,
+    demographics: pd.DataFrame,
+    *,
+    source_name: str,
+    reference_year: int,
+) -> pd.DataFrame:
+    """Join authoritative children/elderly counts by Census village code.
+
+    The join is deliberately strict. Counts must be non-negative, children plus
+    elderly cannot exceed the Census population, and records without a matching
+    demographic row remain incomplete rather than being estimated.
+    """
+    required = {"village_code", "children_population", "elderly_population"}
+    missing = sorted(required - set(demographics.columns))
+    if missing:
+        raise ValueError(f"demographic data is missing required columns: {missing}")
+    if not str(source_name).strip():
+        raise ValueError("demographic source_name is required")
+
+    demo = demographics.copy()
+    demo["village_code"] = demo["village_code"].astype(str).str.strip()
+    if demo["village_code"].duplicated().any():
+        raise ValueError("demographic village_code values must be unique")
+
+    for column in ["children_population", "elderly_population"]:
+        demo[column] = pd.to_numeric(demo[column], errors="raise")
+        if (demo[column] < 0).any():
+            raise ValueError(f"{column} cannot be negative")
+
+    merged = staged.merge(
+        demo[["village_code", "children_population", "elderly_population"]],
+        on="village_code",
+        how="left",
+        validate="one_to_one",
+    )
+    complete = merged[["children_population", "elderly_population"]].notna().all(axis=1)
+    invalid = complete & (
+        merged["children_population"] + merged["elderly_population"] > merged["population"]
+    )
+    if invalid.any():
+        raise ValueError("children + elderly population cannot exceed total population")
+
+    merged["demographic_status"] = complete
+    merged["demographic_source"] = str(source_name).strip()
+    merged["demographic_reference_year"] = int(reference_year)
+    return merged
+
+
 def application_ready_habitations(
     staged_with_coordinates: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -158,7 +207,14 @@ def application_ready_habitations(
             + ", ".join(missing)
         )
 
-    ready = staged_with_coordinates.dropna(subset=["latitude", "longitude"]).copy()
+    ready = staged_with_coordinates.dropna(
+        subset=[
+            "latitude",
+            "longitude",
+            "children_population",
+            "elderly_population",
+        ]
+    ).copy()
     return ready
 
 
@@ -261,6 +317,63 @@ def stage_puri_shelters(
     ]
     keep.extend(column for column in optional_numeric if column in data.columns)
     return data[keep].reset_index(drop=True)
+
+
+def attach_shelter_operational_details(
+    staged: pd.DataFrame,
+    details: pd.DataFrame,
+    *,
+    source_name: str,
+) -> pd.DataFrame:
+    """Join verified shelter coordinates/capacity/occupancy by shelter_id.
+
+    Only fields present in the authoritative details table are joined. Missing
+    values remain missing; current occupancy is never defaulted to zero.
+    """
+    if "shelter_id" not in details.columns:
+        raise ValueError("shelter operational data is missing required column: shelter_id")
+    if not str(source_name).strip():
+        raise ValueError("shelter operational source_name is required")
+
+    detail = details.copy()
+    detail["shelter_id"] = detail["shelter_id"].astype(str).str.strip()
+    if detail["shelter_id"].duplicated().any():
+        raise ValueError("shelter operational shelter_id values must be unique")
+
+    allowed = [
+        "latitude",
+        "longitude",
+        "total_capacity",
+        "current_occupancy",
+        "water_capacity",
+        "sanitation_capacity",
+        "access_capacity",
+        "safety_score",
+        "accessibility_score",
+    ]
+    selected = [column for column in allowed if column in detail.columns]
+    if not selected:
+        raise ValueError("shelter operational data has no enrichable fields")
+
+    for column in selected:
+        detail[column] = pd.to_numeric(detail[column], errors="raise")
+    if "latitude" in selected and not detail["latitude"].dropna().between(-90, 90).all():
+        raise ValueError("shelter latitude must be between -90 and 90")
+    if "longitude" in selected and not detail["longitude"].dropna().between(-180, 180).all():
+        raise ValueError("shelter longitude must be between -180 and 180")
+    for column in ["total_capacity", "current_occupancy", "water_capacity", "sanitation_capacity", "access_capacity"]:
+        if column in selected and (detail[column].dropna() < 0).any():
+            raise ValueError(f"{column} cannot be negative")
+
+    base = staged.drop(columns=[column for column in selected if column in staged.columns])
+    merged = base.merge(
+        detail[["shelter_id", *selected]],
+        on="shelter_id",
+        how="left",
+        validate="one_to_one",
+    )
+    merged["operational_source"] = str(source_name).strip()
+    return merged
 
 
 def application_ready_shelters(staged: pd.DataFrame) -> pd.DataFrame:
