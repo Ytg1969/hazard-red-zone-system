@@ -14,6 +14,7 @@ PAGES = [
     ROOT / "pages/4_Relocation_Planner.py",
     ROOT / "pages/5_Scenario_Studio.py",
     ROOT / "pages/6_Methodology.py",
+    ROOT / "pages/7_Pilot_Status.py",
 ]
 
 
