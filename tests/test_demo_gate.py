@@ -8,3 +8,10 @@ def test_demo_gate_reports_ready():
     assert result["habitations"] > 0
     assert result["shelters"] > 0
     assert result["available_shelter_capacity"] >= 0
+    assert result["sample_recommended_shelter"]
+    assert result["sample_allocated_population"] <= result["sample_required_population"]
+    assert (
+        result["sample_allocated_population"] + result["sample_remaining_deficit"]
+        == result["sample_required_population"]
+    )
+    assert result["action_plan_export"] == "PASS"
