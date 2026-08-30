@@ -12,25 +12,35 @@ from src.carrying_capacity import calculate_capacity
 from src.preprocessing import load_habitations, load_shelters
 from src.relocation import recommend_shelter, relocation_priority
 from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
+from src.spatial_analysis import calculate_hazard_exposure, load_hazard_layer
 from src.vulnerability import calculate_vulnerability
 
 
 DEMO_HABITATIONS = Path("data/demo/habitations.csv")
 DEMO_SHELTERS = Path("data/demo/shelters.csv")
+DEMO_HAZARDS = Path("data/demo/hazards.geojson")
 
 
 def load_demo_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     return load_habitations(DEMO_HABITATIONS), load_shelters(DEMO_SHELTERS)
 
 
+def load_demo_hazards():
+    return load_hazard_layer(DEMO_HAZARDS)
+
+
 def enrich_habitations(
     habitations: pd.DataFrame,
     weights: dict | None = None,
+    hazard_data=None,
 ) -> pd.DataFrame:
     weights = weights or DEFAULT_WEIGHTS
     records: list[dict] = []
 
     for row in habitations.to_dict(orient="records"):
+        if hazard_data is not None:
+            row.update(calculate_hazard_exposure(row, hazard_data=hazard_data))
+
         vulnerability = calculate_vulnerability(row)
         row.update(vulnerability)
         risk = calculate_risk(row, weights=weights)
