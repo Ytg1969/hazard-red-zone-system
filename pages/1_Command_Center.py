@@ -1,7 +1,13 @@
 import plotly.express as px
 import streamlit as st
 
-from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
+from src.pipeline import (
+    calculate_summary,
+    enrich_habitations,
+    enrich_shelters,
+    load_demo_data,
+    load_demo_hazards,
+)
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -20,7 +26,11 @@ render_data_mode_indicator("DEMO")
 
 try:
     habitations_raw, shelters_raw = load_demo_data()
-    habitations = enrich_habitations(habitations_raw)
+    try:
+        hazards = load_demo_hazards()
+    except Exception:
+        hazards = None
+    habitations = enrich_habitations(habitations_raw, hazard_data=hazards)
     shelters = enrich_shelters(shelters_raw)
 except Exception:
     st.error("Unable to prepare the demonstration command-center dataset.")
@@ -81,17 +91,18 @@ with tab1:
         st.plotly_chart(fig, width="stretch")
 
     st.subheader("Highest-risk locations")
+    table_columns = [
+        "name",
+        "population",
+        "risk_score",
+        "risk_level",
+        "relocation_priority",
+        "risk_drivers",
+    ]
+    if "hazard_type" in filtered.columns:
+        table_columns.append("hazard_type")
     st.dataframe(
-        filtered[
-            [
-                "name",
-                "population",
-                "risk_score",
-                "risk_level",
-                "relocation_priority",
-                "risk_drivers",
-            ]
-        ].sort_values("risk_score", ascending=False),
+        filtered[table_columns].sort_values("risk_score", ascending=False),
         width="stretch",
         hide_index=True,
     )
