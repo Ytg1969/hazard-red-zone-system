@@ -1,9 +1,9 @@
 """Authoritative-data staging helpers for the Odisha pilot.
 
-This module intentionally separates demographic ingestion from coordinate enrichment.
-Census 2011 population values are preserved with their source year and are never
-presented as current population. Records only become application-ready habitations
-after a coordinate join succeeds.
+This module intentionally separates demographic/shelter ingestion from coordinate
+and operational enrichment. Historical Census values keep their source year.
+Shelter capacities/occupancy remain unknown unless the supplied authority source
+actually provides them. Nothing is silently invented to satisfy the core schema.
 """
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ import pandas as pd
 
 CENSUS_SOURCE_NAME = "Census of India 2011 - Primary Census Abstract / Basic Population Figures"
 CENSUS_SOURCE_YEAR = 2011
+OSDMA_SHELTER_SOURCE_NAME = "OSDMA / Puri District Disaster Management Plan shelter inventory"
+OSDMA_SHELTER_SOURCE_URL = "https://www.osdma.org/plan-and-policy/district-disaster-management-plan/"
 PILOT_STATE = "Odisha"
 PILOT_DISTRICT = "Puri"
 
@@ -24,6 +26,15 @@ STAGING_REQUIRED = {
     "village_code",
     "village_name",
     "population",
+}
+
+SHELTER_STAGING_REQUIRED = {
+    "district_name",
+    "block_name",
+    "gp_name",
+    "village_name",
+    "location_name",
+    "shelter_type",
 }
 
 
@@ -148,6 +159,136 @@ def application_ready_habitations(
         )
 
     ready = staged_with_coordinates.dropna(subset=["latitude", "longitude"]).copy()
+    return ready
+
+
+def _slug(value: object) -> str:
+    text = str(value or "").strip().casefold()
+    return "-".join(part for part in "".join(ch if ch.isalnum() else " " for ch in text).split())
+
+
+def stage_puri_shelters(
+    df: pd.DataFrame,
+    *,
+    column_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """Stage the authoritative Puri MCS/MFS inventory without inventing capacity.
+
+    The Puri DDMP/OSDMA inventory reliably supplies administrative location and
+    shelter type. Some rows/tables may also supply capacity, coordinates or other
+    fields; those are preserved when present. Missing capacity/occupancy stays
+    missing rather than being converted to zero.
+    """
+    data = df.copy()
+    if column_map:
+        data = data.rename(columns=column_map)
+
+    missing = sorted(SHELTER_STAGING_REQUIRED - set(data.columns))
+    if missing:
+        raise ValueError(f"shelter staging data is missing required columns: {missing}")
+
+    for column in SHELTER_STAGING_REQUIRED:
+        data[column] = data[column].fillna("").astype(str).str.strip()
+
+    data = data[
+        data["district_name"].str.casefold().eq(PILOT_DISTRICT.casefold())
+        & data["village_name"].ne("")
+    ].copy()
+
+    allowed_types = {"MCS", "MFS"}
+    data["shelter_type"] = data["shelter_type"].str.upper()
+    invalid_types = sorted(set(data.loc[~data["shelter_type"].isin(allowed_types), "shelter_type"]))
+    if invalid_types:
+        raise ValueError(f"unsupported shelter types: {invalid_types}")
+
+    base_id = (
+        data["block_name"].map(_slug)
+        + "-"
+        + data["gp_name"].map(_slug)
+        + "-"
+        + data["village_name"].map(_slug)
+    )
+    if base_id.duplicated().any():
+        counts = base_id.groupby(base_id).cumcount().astype(str)
+        base_id = base_id + "-" + counts
+
+    data["shelter_id"] = "OSDMA-PURI-" + base_id.str.upper()
+    data["name"] = data["village_name"] + " " + data["shelter_type"]
+    data["shelter_source"] = OSDMA_SHELTER_SOURCE_NAME
+    data["shelter_source_url"] = OSDMA_SHELTER_SOURCE_URL
+    data["data_mode"] = "CACHED"
+
+    optional_numeric = [
+        "latitude",
+        "longitude",
+        "total_capacity",
+        "current_occupancy",
+        "water_capacity",
+        "sanitation_capacity",
+        "access_capacity",
+        "safety_score",
+        "accessibility_score",
+    ]
+    for column in optional_numeric:
+        if column in data.columns:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
+
+    if "latitude" in data.columns:
+        invalid = data["latitude"].dropna()
+        if not invalid.between(-90, 90).all():
+            raise ValueError("shelter latitude must be between -90 and 90")
+    if "longitude" in data.columns:
+        invalid = data["longitude"].dropna()
+        if not invalid.between(-180, 180).all():
+            raise ValueError("shelter longitude must be between -180 and 180")
+
+    for column in ["total_capacity", "current_occupancy", "water_capacity", "sanitation_capacity", "access_capacity"]:
+        if column in data.columns and (data[column].dropna() < 0).any():
+            raise ValueError(f"{column} cannot be negative")
+
+    keep = [
+        "shelter_id",
+        "name",
+        "district_name",
+        "block_name",
+        "gp_name",
+        "village_name",
+        "location_name",
+        "shelter_type",
+        "shelter_source",
+        "shelter_source_url",
+        "data_mode",
+    ]
+    keep.extend(column for column in optional_numeric if column in data.columns)
+    return data[keep].reset_index(drop=True)
+
+
+def application_ready_shelters(staged: pd.DataFrame) -> pd.DataFrame:
+    """Return only shelters whose operational fields are actually known.
+
+    The frozen shelter contract requires coordinates, total capacity and current
+    occupancy. Unknown values are not replaced with zero. Resource sub-capacities
+    may still remain unknown and are handled by the carrying-capacity engine as
+    PARTIAL/UNVALIDATED.
+    """
+    required = {
+        "shelter_id",
+        "name",
+        "latitude",
+        "longitude",
+        "total_capacity",
+        "current_occupancy",
+    }
+    missing = sorted(required - set(staged.columns))
+    if missing:
+        raise ValueError(
+            "pilot shelters are not application-ready; authoritative enrichment is still required for: "
+            + ", ".join(missing)
+        )
+
+    ready = staged.dropna(
+        subset=["latitude", "longitude", "total_capacity", "current_occupancy"]
+    ).copy()
     return ready
 
 
