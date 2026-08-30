@@ -1,3 +1,6 @@
+import pandas as pd
+import pytest
+
 from src.relocation import allocate_population, rank_shelters, recommend_shelter
 
 
@@ -98,3 +101,39 @@ def test_population_allocation_never_exceeds_available_capacity():
     assert result["allocated_population"] == 550
     assert result["remaining_deficit"] == 50
     assert sum(item["assigned_population"] for item in result["allocations"]) == 550
+
+
+def test_relocation_accepts_dataframe_and_series_inputs():
+    habitation = pd.Series(
+        {"latitude": 20.27, "longitude": 85.84, "population": 200}
+    )
+    shelters = pd.DataFrame(
+        [
+            {
+                "shelter_id": "A",
+                "name": "A",
+                "latitude": 20.28,
+                "longitude": 85.85,
+                "total_capacity": 300,
+                "current_occupancy": 0,
+                "safety_score": 85,
+                "accessibility_score": 80,
+            }
+        ]
+    )
+
+    ranked = rank_shelters(habitation, shelters)
+    recommendation = recommend_shelter(habitation, shelters)
+    allocation = allocate_population(habitation, shelters)
+
+    assert len(ranked) == 1
+    assert recommendation is not None
+    assert recommendation["shelter_id"] == "A"
+    assert allocation["allocated_population"] == 200
+    assert allocation["remaining_deficit"] == 0
+
+
+def test_relocation_rejects_string_shelter_collection_with_clear_error():
+    habitation = {"latitude": 20.27, "longitude": 85.84, "population": 200}
+    with pytest.raises(TypeError, match="list of records or a DataFrame"):
+        rank_shelters(habitation, "shelter-name")
