@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/architecture-v2
+      - feature/core-demo-v1
 
 jobs:
   test:
@@ -31,6 +32,9 @@ jobs:
         run: |
           python --version
           conda list
+
+      - name: Compile Python sources
+        run: python -m compileall -q app.py pages src scripts tests
 
       - name: Run tests
         run: python -m pytest tests -q
