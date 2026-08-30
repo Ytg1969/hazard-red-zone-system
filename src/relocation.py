@@ -37,9 +37,54 @@ def _distance_score(distance_km: float, reference_km: float = 30.0) -> float:
     return max(0.0, 100.0 * (1.0 - float(distance_km) / reference_km))
 
 
+def _normalize_habitation(habitation) -> dict:
+    """Accept mapping-like records such as dict or pandas Series."""
+    if isinstance(habitation, dict):
+        return habitation.copy()
+    if hasattr(habitation, "to_dict"):
+        converted = habitation.to_dict()
+        if isinstance(converted, dict):
+            return converted
+    try:
+        converted = dict(habitation)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("habitation must be a dict-like record") from exc
+    return converted
+
+
+def _normalize_shelters(shelters) -> list[dict]:
+    """Accept list-of-dicts or a pandas DataFrame without iterating column names."""
+    if shelters is None:
+        return []
+
+    # pandas.DataFrame and compatible table objects support orient='records'.
+    if hasattr(shelters, "to_dict") and hasattr(shelters, "columns"):
+        records = shelters.to_dict(orient="records")
+    else:
+        if isinstance(shelters, (str, bytes, dict)):
+            raise TypeError("shelters must be a list of records or a DataFrame")
+        try:
+            records = list(shelters)
+        except TypeError as exc:
+            raise TypeError("shelters must be a list of records or a DataFrame") from exc
+
+    normalized: list[dict] = []
+    for index, shelter in enumerate(records):
+        if isinstance(shelter, dict):
+            normalized.append(shelter.copy())
+        elif hasattr(shelter, "to_dict"):
+            converted = shelter.to_dict()
+            if not isinstance(converted, dict):
+                raise TypeError(f"shelter at index {index} is not a dict-like record")
+            normalized.append(converted)
+        else:
+            raise TypeError(f"shelter at index {index} is not a dict-like record")
+    return normalized
+
+
 def rank_shelters(
-    habitation: dict,
-    shelters: list[dict],
+    habitation,
+    shelters,
     weights: dict | None = None,
     minimum_safety_score: float = 50.0,
 ) -> list[dict]:
@@ -48,11 +93,17 @@ def rank_shelters(
     if set(weights) != required or abs(sum(weights.values()) - 1.0) > 1e-6:
         raise ValueError("relocation weights must contain safety/capacity/accessibility/distance and sum to 1.0")
 
-    population = max(0.0, float(habitation.get("population", 0) or 0))
-    origin = (float(habitation["latitude"]), float(habitation["longitude"]))
+    habitation_record = _normalize_habitation(habitation)
+    shelter_records = _normalize_shelters(shelters)
+
+    population = max(0.0, float(habitation_record.get("population", 0) or 0))
+    origin = (
+        float(habitation_record["latitude"]),
+        float(habitation_record["longitude"]),
+    )
     candidates: list[dict] = []
 
-    for shelter in shelters:
+    for shelter in shelter_records:
         safety_score = _bounded(shelter.get("safety_score", 0))
         if safety_score < minimum_safety_score:
             continue
@@ -100,20 +151,18 @@ def rank_shelters(
     return sorted(candidates, key=lambda item: item["suitability_score"], reverse=True)
 
 
-def recommend_shelter(habitation: dict, shelters: list[dict]) -> dict | None:
+def recommend_shelter(habitation, shelters) -> dict | None:
     ranked = rank_shelters(habitation, shelters)
     return ranked[0] if ranked else None
 
 
-def allocate_population(
-    habitation: dict,
-    shelters: list[dict],
-) -> dict:
+def allocate_population(habitation, shelters) -> dict:
     """Allocate a habitation population across ranked shelters without overfilling."""
-    remaining = max(0, int(float(habitation.get("population", 0) or 0)))
+    habitation_record = _normalize_habitation(habitation)
+    remaining = max(0, int(float(habitation_record.get("population", 0) or 0)))
     allocations: list[dict] = []
 
-    for candidate in rank_shelters(habitation, shelters):
+    for candidate in rank_shelters(habitation_record, shelters):
         if remaining <= 0:
             break
         capacity = int(candidate["available_capacity"])
@@ -131,9 +180,10 @@ def allocate_population(
         )
         remaining -= assigned
 
+    required_population = int(float(habitation_record.get("population", 0) or 0))
     return {
-        "required_population": int(float(habitation.get("population", 0) or 0)),
-        "allocated_population": int(float(habitation.get("population", 0) or 0)) - remaining,
+        "required_population": required_population,
+        "allocated_population": required_population - remaining,
         "remaining_deficit": remaining,
         "allocations": allocations,
     }
