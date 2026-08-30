@@ -1,7 +1,12 @@
 import pandas as pd
 import streamlit as st
 
-from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data
+from src.pipeline import (
+    enrich_habitations,
+    enrich_shelters,
+    load_demo_data,
+    load_demo_hazards,
+)
 from src.relocation import allocate_population, rank_shelters
 from src.report_generator import generate_action_plan
 from src.risk_engine import calculate_risk
@@ -23,7 +28,11 @@ render_data_mode_indicator("DEMO")
 
 try:
     habitations_raw, shelters_raw = load_demo_data()
-    habitations = enrich_habitations(habitations_raw)
+    try:
+        hazards = load_demo_hazards()
+    except Exception:
+        hazards = None
+    habitations = enrich_habitations(habitations_raw, hazard_data=hazards)
     shelters = enrich_shelters(shelters_raw)
 except Exception:
     st.error("Unable to prepare the relocation-planning demonstration data.")
@@ -45,6 +54,9 @@ with m3:
     st.caption("Risk Level")
     render_risk_badge(risk["risk_level"])
 m4.metric("Relocation Priority", habitation["relocation_priority"])
+
+if habitation.get("inside_hazard_zone") is True:
+    st.warning("This habitation intersects the active demonstration hazard footprint and should not be matched to a site solely on geographic proximity.")
 
 st.markdown("### 2. Compare suitable shelters")
 ranked = rank_shelters(habitation, shelters.to_dict(orient="records"))
@@ -88,6 +100,8 @@ with left:
     st.success(f"Recommended primary shelter: {recommended['shelter_name']}")
     st.metric("Suitability Score", f"{recommended['suitability_score']:.1f}/100")
     st.metric("Distance", f"{recommended['distance_km']:.2f} km")
+    if recommended.get("travel_time_min") is not None:
+        st.metric("Estimated Travel Time", f"{recommended['travel_time_min']:.0f} min")
     st.metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
     st.caption(
         f"Routing mode: {recommended['routing_mode']} | Capacity status: {recommended['capacity_validation_status']}"
