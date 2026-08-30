@@ -15,7 +15,7 @@ from src.pipeline import (
     load_demo_data,
     load_demo_hazards,
 )
-from src.relocation import allocate_population, recommend_shelter
+from src.relocation import allocate_population, rank_shelters, recommend_shelter
 from src.report_generator import generate_action_plan
 from src.risk_engine import calculate_risk
 
@@ -55,8 +55,9 @@ def run_demo_gate() -> dict:
 
     top = habitations.sort_values("risk_score", ascending=False).iloc[0].to_dict()
     shelter_records = shelters.to_dict(orient="records")
+    ranked = rank_shelters(top, shelter_records)
     relocation = recommend_shelter(top, shelter_records)
-    if relocation is None:
+    if relocation is None or not ranked:
         raise RuntimeError("no valid shelter recommendation for the highest-risk habitation")
     if float(relocation.get("available_capacity", 0)) <= 0:
         raise RuntimeError("recommended shelter has no available capacity")
@@ -67,8 +68,15 @@ def run_demo_gate() -> dict:
     deficit = int(allocation["remaining_deficit"])
     if allocated > required or allocated + deficit != required:
         raise RuntimeError("multi-shelter allocation violates population accounting")
+
+    capacity_by_shelter = {
+        str(candidate["shelter_id"]): int(candidate["available_capacity"])
+        for candidate in ranked
+    }
     for item in allocation.get("allocations", []):
-        if int(item["assigned_population"]) > int(item["available_capacity"]):
+        shelter_id = str(item["shelter_id"])
+        assigned = int(item["assigned_population"])
+        if assigned > capacity_by_shelter.get(shelter_id, 0):
             raise RuntimeError("allocation exceeds shelter available capacity")
 
     risk = calculate_risk(top)
