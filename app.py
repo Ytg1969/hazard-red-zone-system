@@ -118,16 +118,21 @@ with right:
         "Live IMD / NDMA / CWC adapters are intentionally separate. Until connected and verified, "
         "the application must continue to display DEMONSTRATION DATA."
     )
+    st.caption(
+        "Phase 2: an Odisha/Puri authoritative pilot is being integrated behind strict readiness "
+        "gates. Open Odisha Pilot Status to inspect verified sources and remaining data gaps."
+    )
 
 st.divider()
 st.subheader("Operational Modules")
-modules = st.columns(5)
+modules = st.columns(6)
 module_text = [
     ("Command Center", "Monitor risk, population exposure and shelter capacity."),
     ("Red Zone Map", "View habitation locations and risk classes spatially."),
     ("Risk Analysis", "Inspect factor contributions and relocation priority."),
     ("Relocation Planner", "Compare capacity-aware shelter recommendations."),
     ("Scenario Studio", "Adjust risk weights and measure scenario impact."),
+    ("Odisha Pilot Status", "Track authoritative Puri data readiness without fabricating gaps."),
 ]
 for col, (name, description) in zip(modules, module_text):
     with col:
