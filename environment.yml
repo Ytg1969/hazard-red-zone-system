@@ -1,0 +1,20 @@
+name: hazard-red-zone
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - streamlit
+  - pandas
+  - numpy
+  - geopandas
+  - shapely
+  - folium
+  - plotly
+  - scikit-learn
+  - rasterio
+  - networkx
+  - osmnx
+  - pytest
+  - pip
+  - pip:
+      - streamlit-folium
