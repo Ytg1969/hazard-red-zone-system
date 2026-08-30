@@ -1,0 +1,48 @@
+{
+  "type": "FeatureCollection",
+  "name": "SIH26191 Demonstration Hazard Zones",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "hazard_id": "HZ001",
+        "hazard_type": "Flood",
+        "hazard_score": 92,
+        "data_mode": "DEMO",
+        "source": "Synthetic demonstration polygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[85.825,20.252],[85.866,20.252],[85.866,20.296],[85.825,20.296],[85.825,20.252]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "hazard_id": "HZ002",
+        "hazard_type": "Flood",
+        "hazard_score": 72,
+        "data_mode": "DEMO",
+        "source": "Synthetic demonstration polygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[85.858,20.284],[85.899,20.284],[85.899,20.323],[85.858,20.323],[85.858,20.284]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "hazard_id": "HZ003",
+        "hazard_type": "Flood",
+        "hazard_score": 48,
+        "data_mode": "DEMO",
+        "source": "Synthetic demonstration polygon"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[85.886,20.323],[85.916,20.323],[85.916,20.354],[85.886,20.354],[85.886,20.323]]]
+      }
+    }
+  ]
+}
