@@ -2,28 +2,34 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from src.pipeline import (
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.pipeline import (  # noqa: E402
     calculate_summary,
     enrich_habitations,
     enrich_shelters,
     load_demo_data,
     load_demo_hazards,
 )
-from src.relocation import allocate_population, rank_shelters, recommend_shelter
-from src.report_generator import generate_action_plan
-from src.risk_engine import calculate_risk
+from src.relocation import allocate_population, rank_shelters, recommend_shelter  # noqa: E402
+from src.report_generator import generate_action_plan  # noqa: E402
+from src.risk_engine import calculate_risk  # noqa: E402
 
 
 REQUIRED_PAGES = [
-    Path("app.py"),
-    Path("pages/1_Command_Center.py"),
-    Path("pages/2_Red_Zone_Map.py"),
-    Path("pages/3_Risk_Analysis.py"),
-    Path("pages/4_Relocation_Planner.py"),
-    Path("pages/5_Scenario_Studio.py"),
-    Path("pages/6_Methodology.py"),
+    ROOT / "app.py",
+    ROOT / "pages/1_Command_Center.py",
+    ROOT / "pages/2_Red_Zone_Map.py",
+    ROOT / "pages/3_Risk_Analysis.py",
+    ROOT / "pages/4_Relocation_Planner.py",
+    ROOT / "pages/5_Scenario_Studio.py",
+    ROOT / "pages/6_Methodology.py",
 ]
 
 
@@ -107,7 +113,7 @@ def run_demo_gate() -> dict:
         "sample_allocated_population": allocated,
         "sample_remaining_deficit": deficit,
         "action_plan_export": "PASS",
-        "required_pages": [str(path) for path in REQUIRED_PAGES],
+        "required_pages": [str(path.relative_to(ROOT)) for path in REQUIRED_PAGES],
     }
 
 
