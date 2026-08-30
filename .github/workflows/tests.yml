@@ -1,0 +1,36 @@
+name: Foundation Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/architecture-v2
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: hazard-red-zone
+          auto-activate-base: false
+          miniforge-version: latest
+          use-mamba: true
+
+      - name: Show environment
+        run: |
+          python --version
+          conda list
+
+      - name: Run tests
+        run: python -m pytest tests -q
