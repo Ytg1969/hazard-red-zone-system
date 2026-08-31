@@ -1,11 +1,15 @@
+import math
+
 import pandas as pd
 import streamlit as st
 
-from src.earthquake_context import fetch_recent_earthquakes
+from src.earthquake_context import CITY_CENTERS, fetch_recent_earthquakes_at_location
+from src.eonet_context import CATEGORY_MAP, fetch_eonet_events
 from src.gdacs_context import fetch_gdacs_events
 from src.imd_context import fetch_imd_context
 from src.live_alerts import fetch_disaster_alerts
-from src.open_meteo_context import fetch_weather_context
+from src.location_context import search_locations
+from src.open_meteo_context import fetch_weather_at_location
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -14,136 +18,245 @@ from src.ui_theme import (
     render_source_card,
 )
 
-st.set_page_config(page_title="Live Data Context", page_icon="LIVE", layout="wide")
+st.set_page_config(page_title="Live Data Explorer", page_icon="LIVE", layout="wide")
 inject_global_css()
 render_page_header(
-    "Live Data Context",
-    "External situational context for weather, earthquakes, disaster events and national alerts. External feeds never silently change the deterministic risk score.",
+    "Live Data Explorer",
+    "Explore external weather and disaster context for any city and selected calamity without silently changing the deterministic red-zone score.",
 )
 
 st.info(
-    "Presentation rule: the analytical DEMO remains deterministic and offline-safe. "
-    "This page demonstrates LIVE/CACHED external context while keeping unavailable or restricted sources visibly separated."
+    "This explorer is situational context, not an automatic risk-calibration layer. LIVE/CACHED source evidence stays visibly separate from the deterministic DEMO analysis."
 )
 
-city = st.selectbox("City context", ["Puri", "Guwahati", "Chennai"], index=0)
-refresh = st.button("Refresh external sources", type="primary", width="stretch")
+CALAMITIES = [
+    "All calamities",
+    "Flood",
+    "Cyclone / Severe Storm",
+    "Earthquake",
+    "Landslide",
+    "Drought",
+    "Wildfire",
+    "Volcano",
+    "Dust / Haze",
+    "Snow",
+    "Temperature Extremes",
+]
+GDACS_TYPE_MAP = {
+    "Flood": {"FL"},
+    "Cyclone / Severe Storm": {"TC"},
+    "Earthquake": {"EQ"},
+    "Drought": {"DR"},
+    "Volcano": {"VO"},
+}
 
-source_cols = st.columns(5, gap="small")
-with source_cols[0]:
-    render_source_card("IMD", "District warnings + rainfall", "Official documented API; may require authorized client/IP access.")
-with source_cols[1]:
-    render_source_card("Open-Meteo", "Current weather", "No-auth live weather context with cache fallback.")
-with source_cols[2]:
-    render_source_card("USGS FDSN", "Earthquakes", "Official earthquake catalogue near the selected demo city.")
-with source_cols[3]:
-    render_source_card("GDACS", "Multi-hazard events", "Global flood, cyclone, earthquake, drought and volcano event context.")
-with source_cols[4]:
-    render_source_card("NDMA SACHET", "CAP / RSS alerts", "ETag-aware cache path; verified feed identifier required for LIVE mode.")
+st.markdown("### Explore a location")
+mode_col, location_col, calamity_col = st.columns([0.9, 1.55, 1.25], gap="large")
+with mode_col:
+    location_mode = st.radio("Location mode", ["Demo city", "Any city"], horizontal=True)
 
-st.divider()
+location = None
+if location_mode == "Demo city":
+    with location_col:
+        city = st.selectbox("City", list(CITY_CENTERS), index=0)
+    lat, lon = CITY_CENTERS[city]
+    location = {"name": city, "label": city, "latitude": lat, "longitude": lon, "country": "India"}
+else:
+    with location_col:
+        query = st.text_input("Search any city", placeholder="e.g. Mumbai, India or Tokyo, Japan")
+        search_clicked = st.button("Find city", width="stretch")
+    if search_clicked and query.strip():
+        try:
+            result = search_locations(query, count=10)
+            st.session_state["live_location_results"] = result.get("results", [])
+            st.session_state["live_location_query"] = query
+        except Exception as exc:
+            st.session_state["live_location_results"] = []
+            st.error(f"Location search failed: {exc}")
+    candidates = st.session_state.get("live_location_results", [])
+    if candidates:
+        labels = [item["label"] for item in candidates]
+        chosen = st.selectbox("Matching location", labels)
+        location = next(item for item in candidates if item["label"] == chosen)
+    else:
+        st.caption("Search for a city first. Open-Meteo geocoding is used to resolve WGS84 coordinates.")
+
+with calamity_col:
+    calamity = st.selectbox("Calamity / event type", CALAMITIES)
+
+settings_left, settings_mid, settings_right = st.columns(3)
+with settings_left:
+    days = st.slider("Look-back window (days)", 1, 90, 30)
+with settings_mid:
+    radius_km = st.slider("Regional search radius (km)", 100, 1500, 500, 100)
+with settings_right:
+    min_magnitude = st.slider("Minimum earthquake magnitude", 0.0, 6.0, 2.5, 0.5)
+
+if location:
+    st.markdown(
+        f"**Selected:** {location['label']} · `{float(location['latitude']):.4f}, {float(location['longitude']):.4f}` · "
+        f"**Context:** {calamity}"
+    )
+
+refresh = st.button("Refresh selected live context", type="primary", width="stretch", disabled=location is None)
+
+st.markdown("### Connected context sources")
+row1 = st.columns(4, gap="small")
+with row1[0]:
+    render_source_card("Open-Meteo", "Weather + forecast", "No-auth current weather for arbitrary coordinates with cache fallback.")
+with row1[1]:
+    render_source_card("USGS FDSN", "Earthquakes", "Official earthquake catalogue queried around the selected coordinates.")
+with row1[2]:
+    render_source_card("GDACS", "Global disaster events", "UN/EU-supported flood, cyclone, earthquake, drought and volcano event context.")
+with row1[3]:
+    render_source_card("NASA EONET", "Natural events", "NASA-curated flood, storms, landslides, wildfire, volcano and other event categories.")
+row2 = st.columns(3, gap="small")
+with row2[0]:
+    render_source_card("IMD", "Indian warnings", "Official adapter retained for verified mapped demo districts; authorization may be required.")
+with row2[1]:
+    render_source_card("NDMA SACHET", "National alerts", "ETag-aware CAP/RSS integration; verified feed identifier required for LIVE mode.")
+with row2[2]:
+    render_source_card("Bhuvan", "GIS context", "Verified WMS layers remain available on the Red Zone Map and are not numerically reinterpreted here.")
 
 if not refresh:
-    st.markdown("### Ready to query")
+    st.markdown("### How to use the explorer")
     st.write(
-        "Select a city and press **Refresh external sources**. The app will attempt live calls, reuse the last successful "
-        "cache where available, and fail visibly instead of inventing observations."
-    )
-    st.markdown("#### Authoritative GIS integration path")
-    st.write(
-        "NRSC/ISRO Bhuvan exposes OGC WMS services for Flood Hazard and Flood Annual Layers. "
-        "Exact production layer identifiers and source-class mapping remain gated before those layers can affect scoring."
+        "Choose one of the bundled demo cities or search for any city, select a calamity, tune the time/radius controls, and refresh. "
+        "Weather and earthquake calls use the selected coordinates; GDACS and NASA EONET are filtered to the selected event type where supported."
     )
     render_disclaimer()
     st.stop()
 
+lat = float(location["latitude"])
+lon = float(location["longitude"])
+name = str(location["label"])
+
+# Approximate a regional bounding box for event discovery. This is a query window,
+# not an administrative or hazard boundary.
+lat_delta = radius_km / 111.0
+lon_scale = max(0.2, math.cos(math.radians(lat)))
+lon_delta = radius_km / (111.0 * lon_scale)
+bbox = (lon - lon_delta, lat + lat_delta, lon + lon_delta, lat - lat_delta)
+
 with st.spinner("Querying external sources with cache-aware fallbacks..."):
-    imd = fetch_imd_context(city)
     try:
-        weather = fetch_weather_context(city)
+        weather = fetch_weather_at_location(name, lat, lon)
     except Exception as exc:
         weather = {"source": "Open-Meteo Forecast API", "mode": "DEMO", "stale": False, "current": {}, "error": str(exc)}
     try:
-        usgs = fetch_recent_earthquakes(city, days=30, radius_km=500, min_magnitude=2.5)
+        usgs = fetch_recent_earthquakes_at_location(name, lat, lon, days=days, radius_km=radius_km, min_magnitude=min_magnitude)
     except Exception as exc:
         usgs = {"source": "USGS FDSN Earthquake Catalog", "mode": "DEMO", "stale": False, "events": [], "error": str(exc)}
     try:
-        gdacs = fetch_gdacs_events(days=7)
+        gdacs = fetch_gdacs_events(days=days)
     except Exception as exc:
         gdacs = {"source": "GDACS", "mode": "DEMO", "stale": False, "events": [], "error": str(exc)}
+    try:
+        eonet = fetch_eonet_events(category=CATEGORY_MAP.get(calamity), days=days, limit=100, bbox=bbox)
+    except Exception as exc:
+        eonet = {"source": "NASA EONET", "mode": "DEMO", "stale": False, "events": [], "error": str(exc)}
+
+    # IMD aliases are deliberately verified only for bundled Indian demo cities.
+    if location_mode == "Demo city":
+        imd = fetch_imd_context(location["name"])
+    else:
+        imd = {"source": "India Meteorological Department", "mode": "DEMO", "stale": False, "warnings": [], "rainfall": [], "access_status": "LOCATION_NOT_MAPPED"}
     sachet = fetch_disaster_alerts()
 
-st.markdown("## Source status")
-status_cols = st.columns(5, gap="small")
-with status_cols[0]:
-    st.markdown("#### IMD")
-    render_data_mode_indicator(imd["mode"])
-    st.metric("Warnings", len(imd.get("warnings", [])))
-    st.metric("Rainfall rows", len(imd.get("rainfall", [])))
-    if imd.get("access_status") == "AUTHORIZATION_REQUIRED":
-        st.warning("Endpoint reachable; direct API authorization is required for this client/IP.")
-    elif imd.get("stale"):
-        st.warning("Using cached IMD response.")
+if calamity != "All calamities" and calamity in GDACS_TYPE_MAP:
+    wanted = GDACS_TYPE_MAP[calamity]
+    gdacs["events"] = [row for row in gdacs.get("events", []) if str(row.get("event_type") or "").upper() in wanted]
+elif calamity not in {"All calamities", *GDACS_TYPE_MAP.keys()}:
+    gdacs["events"] = []
 
-with status_cols[1]:
+st.markdown("## Source status")
+status1 = st.columns(4, gap="small")
+with status1[0]:
     st.markdown("#### Open-Meteo")
     render_data_mode_indicator(weather["mode"])
     current = weather.get("current", {})
     units = weather.get("current_units", {})
-    temperature = current.get("temperature_2m")
-    precipitation = current.get("precipitation")
-    st.metric("Temperature", f"{temperature} {units.get('temperature_2m', '')}" if temperature is not None else "—")
-    st.metric("Precipitation", f"{precipitation} {units.get('precipitation', '')}" if precipitation is not None else "—")
-    if weather.get("stale"):
-        st.warning("Using cached weather response.")
-
-with status_cols[2]:
+    temp = current.get("temperature_2m")
+    rain = current.get("precipitation")
+    st.metric("Temperature", f"{temp} {units.get('temperature_2m', '')}" if temp is not None else "—")
+    st.metric("Precipitation", f"{rain} {units.get('precipitation', '')}" if rain is not None else "—")
+with status1[1]:
     st.markdown("#### USGS")
     render_data_mode_indicator(usgs["mode"])
-    st.metric("Quakes / 30 days", len(usgs.get("events", [])))
-    if usgs.get("stale"):
-        st.warning("Using cached USGS response.")
-
-with status_cols[3]:
+    st.metric(f"Quakes / {days} days", len(usgs.get("events", [])))
+with status1[2]:
     st.markdown("#### GDACS")
     render_data_mode_indicator(gdacs["mode"])
-    st.metric("Events / 7 days", len(gdacs.get("events", [])))
-    if gdacs.get("stale"):
-        st.warning("Using cached GDACS response.")
+    st.metric("Matching events", len(gdacs.get("events", [])))
+with status1[3]:
+    st.markdown("#### NASA EONET")
+    render_data_mode_indicator(eonet["mode"])
+    st.metric("Regional events", len(eonet.get("events", [])))
 
-with status_cols[4]:
-    st.markdown("#### SACHET")
+status2 = st.columns(2, gap="large")
+with status2[0]:
+    st.markdown("#### IMD")
+    render_data_mode_indicator(imd["mode"])
+    if imd.get("access_status") == "AUTHORIZATION_REQUIRED":
+        st.warning("Endpoint reachable; direct API authorization is required for this client/IP.")
+    elif imd.get("access_status") == "LOCATION_NOT_MAPPED":
+        st.info("Arbitrary-city IMD district lookup is not guessed. Use the verified demo-city mappings or add an authoritative district mapping.")
+    else:
+        st.metric("Warnings", len(imd.get("warnings", [])))
+with status2[1]:
+    st.markdown("#### NDMA SACHET")
     render_data_mode_indicator(sachet["mode"])
     st.metric("Alerts", len(sachet.get("alerts", [])))
-    if sachet.get("stale"):
-        st.warning("Using cached alert feed.")
-    if sachet["mode"] == "DEMO":
-        st.caption("Verified feed identifier not configured.")
 
 st.divider()
-
-tabs = st.tabs(["Current Weather", "IMD", "USGS Earthquakes", "GDACS Events", "NDMA Alerts"])
+tabs = st.tabs(["Weather", "USGS Earthquakes", "GDACS", "NASA EONET", "IMD", "NDMA SACHET"])
 
 with tabs[0]:
     current = weather.get("current", {})
-    if not current:
-        st.info("Live weather context is unavailable and no cache exists.")
+    if current:
+        table = pd.DataFrame([current]).T.reset_index()
+        table.columns = ["Variable", "Value"]
+        st.dataframe(table, width="stretch", hide_index=True)
+    else:
+        st.info("No current weather response is available.")
         if weather.get("error"):
             st.caption(weather["error"])
-    else:
-        weather_table = pd.DataFrame([current]).T.reset_index()
-        weather_table.columns = ["Variable", "Value"]
-        st.dataframe(weather_table, width="stretch", hide_index=True)
-        st.caption("Open-Meteo data is real external weather context, not an official Indian warning product and not a direct input to the frozen risk score.")
+    st.caption("Open-Meteo is external weather context, not an official Indian warning product and not a direct risk-score input.")
 
 with tabs[1]:
+    earthquakes = pd.DataFrame(usgs.get("events", []))
+    if earthquakes.empty:
+        st.info("No matching earthquake events were returned for this radius, magnitude and time window.")
+    else:
+        show = [c for c in ["magnitude", "place", "depth_km", "time", "latitude", "longitude", "detail_url"] if c in earthquakes.columns]
+        st.dataframe(earthquakes[show], width="stretch", hide_index=True)
+    st.caption("USGS FDSN is queried around the selected city coordinates and remains contextual evidence only.")
+
+with tabs[2]:
+    events = pd.DataFrame(gdacs.get("events", []))
+    if events.empty:
+        st.info("No GDACS events match the selected calamity/time filter, or that calamity is not represented by the current GDACS adapter.")
+    else:
+        show = [c for c in ["event_type", "name", "country", "alert_level", "severity", "from_date", "to_date", "latitude", "longitude", "url"] if c in events.columns]
+        st.dataframe(events[show], width="stretch", hide_index=True)
+    st.caption("GDACS is global event awareness; rows are not automatically city-local unless independently verified by coordinates.")
+
+with tabs[3]:
+    events = pd.DataFrame(eonet.get("events", []))
+    if events.empty:
+        st.info("No NASA EONET events were returned inside the approximate regional query window for the selected category/time range.")
+        if eonet.get("error"):
+            st.caption(eonet["error"])
+    else:
+        show = [c for c in ["title", "categories", "latest_date", "magnitude", "magnitude_unit", "latitude", "longitude", "closed", "api_link"] if c in events.columns]
+        st.dataframe(events[show], width="stretch", hide_index=True)
+    st.caption("NASA EONET is a curated natural-event discovery source. The bounding box is a regional search window, not a hazard boundary.")
+
+with tabs[4]:
     if imd.get("access_status") == "AUTHORIZATION_REQUIRED":
-        st.warning(
-            "The official IMD API endpoint responded, but this demo machine is not authorized for direct API access. "
-            "This is shown explicitly rather than bypassing authentication or disabling security controls."
-        )
-    for error in imd.get("errors", []):
-        st.caption(error)
+        st.warning("The official IMD endpoint responded but this client/IP is not authorized for direct API access.")
+    elif imd.get("access_status") == "LOCATION_NOT_MAPPED":
+        st.info("No arbitrary-city IMD alias was invented. Verified district mapping is required before querying this source for a custom city.")
     warnings = pd.DataFrame(imd.get("warnings", []))
     rainfall = pd.DataFrame(imd.get("rainfall", []))
     if not warnings.empty:
@@ -152,52 +265,20 @@ with tabs[1]:
     if not rainfall.empty:
         st.markdown("#### District rainfall")
         st.dataframe(rainfall, width="stretch", hide_index=True)
-    if warnings.empty and rainfall.empty and imd.get("access_status") != "AUTHORIZATION_REQUIRED":
-        st.info("No IMD rows are available from the current or cached response.")
 
-with tabs[2]:
-    earthquakes = pd.DataFrame(usgs.get("events", []))
-    if earthquakes.empty:
-        st.info("No matching earthquake events were returned, or the source could not be reached and no cache exists.")
-    else:
-        show = [column for column in ["magnitude", "place", "depth_km", "time", "latitude", "longitude"] if column in earthquakes.columns]
-        st.dataframe(earthquakes[show], width="stretch", hide_index=True)
-    st.caption("USGS FDSN data is contextual evidence only and does not directly modify the prototype hazard score.")
-
-with tabs[3]:
-    events = pd.DataFrame(gdacs.get("events", []))
-    if events.empty:
-        st.info("No GDACS events were returned for the selected seven-day query, or the source is unavailable and no cache exists.")
-        if gdacs.get("error"):
-            st.caption(gdacs["error"])
-    else:
-        show = [c for c in ["event_type", "name", "country", "alert_level", "severity", "from_date", "to_date", "latitude", "longitude"] if c in events.columns]
-        st.dataframe(events[show], width="stretch", hide_index=True)
-    st.caption("GDACS is supplemental global disaster-awareness context and remains separate from calibrated local risk scoring.")
-
-with tabs[4]:
+with tabs[5]:
     alerts = pd.DataFrame(sachet.get("alerts", []))
     if alerts.empty:
-        st.info("No alerts returned.")
+        st.info("No verified SACHET alerts returned from the configured feed.")
     else:
-        show = [column for column in ["event", "severity", "urgency", "area", "headline", "published"] if column in alerts.columns]
+        show = [c for c in ["event", "severity", "urgency", "area", "headline", "published"] if c in alerts.columns]
         st.dataframe(alerts[show], width="stretch", hide_index=True)
-    st.caption(
-        "NDMA's SACHET integration guide requires client-side caching/ETag-aware CAP XML consumption. "
-        "The configured feed must be verified before LIVE labeling."
-    )
+    st.caption("SACHET remains LIVE only when a verified feed identifier is configured; the app never fabricates one.")
 
 st.divider()
-st.markdown("### Operationalization status")
-st.markdown(
-    """
-- **Current weather:** LIVE no-auth context available through Open-Meteo with cache fallback.
-- **Earthquakes:** LIVE USGS FDSN context available.
-- **Multi-hazard events:** GDACS event context available with cache fallback.
-- **IMD warnings/rainfall:** official endpoints are integrated but may require authorized client/IP access; the app does not bypass that control.
-- **Flood / cyclone / landslide GIS:** Bhuvan layer identifiers, legend/classes and CRS must be verified before scoring.
-- **NDMA alerts:** SACHET ETag handling is ready; a verified feed identifier is still required for LIVE mode.
-"""
+st.markdown("### Context boundary")
+st.write(
+    "The explorer can now investigate arbitrary cities and multiple calamities through coordinate-based weather/earthquake queries and global event feeds. "
+    "These sources support situational awareness. They do not automatically overwrite the frozen risk equation or convert an external event into an evacuation order."
 )
-
 render_disclaimer()
