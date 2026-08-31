@@ -74,6 +74,7 @@ else:
         try:
             result = search_locations(query, count=10)
             st.session_state["live_location_results"] = result.get("results", [])
+            st.session_state["live_location_query"] = query
         except Exception as exc:
             st.session_state["live_location_results"] = []
             st.error(f"Location search failed: {exc}")
@@ -88,16 +89,15 @@ else:
 with calamity_col:
     calamity = st.selectbox("Calamity / event type", CALAMITIES)
 
-preset = st.radio(
+preset = st.segmented_control(
     "Explorer preset",
     ["Balanced", "Local incident", "Regional watch"],
-    horizontal=True,
-    help="Presets only change the search window; they never change the risk model.",
+    default="Balanced",
 )
 if preset == "Local incident":
-    default_days, default_radius = 7, 200
+    default_days, default_radius = 7, 150
 elif preset == "Regional watch":
-    default_days, default_radius = 30, 1000
+    default_days, default_radius = 60, 1000
 else:
     default_days, default_radius = 30, 500
 
@@ -105,7 +105,7 @@ settings_left, settings_mid, settings_right = st.columns(3)
 with settings_left:
     days = st.slider("Look-back window (days)", 1, 90, default_days)
 with settings_mid:
-    radius_km = st.slider("Nearby-event radius (km)", 100, 1500, default_radius, 100)
+    radius_km = st.slider("Nearby-event radius (km)", 100, 1500, default_radius, 50)
 with settings_right:
     min_magnitude = st.slider("Minimum earthquake magnitude", 0.0, 6.0, 2.5, 0.5)
 
@@ -124,12 +124,12 @@ with source_cols[0]:
 with source_cols[1]:
     render_source_card("Open-Meteo Air", "Air / dust context", "AQI, PM2.5, PM10, dust and UV context useful during smoke, haze and heat events.")
 with source_cols[2]:
-    render_source_card("USGS + GDACS", "Recent events", "Nearby earthquakes plus disaster events spatially checked against the selected city.")
+    render_source_card("USGS + GDACS", "Recent events", "Nearby earthquakes plus global disaster events spatially checked against the selected city.")
 with source_cols[3]:
     render_source_card("NASA EONET", "Regional natural events", "NASA-curated storms, floods, fires, landslides, volcanoes and related event metadata.")
 
 st.caption(
-    "IMD and NDMA SACHET remain available where authorization/feed mapping permits. "
+    "IMD and NDMA SACHET remain available as official Indian-source integrations where authorization/feed mapping permits. "
     "Bhuvan authoritative/historical WMS layers remain on the Red Zone Map."
 )
 
@@ -137,7 +137,7 @@ if not refresh:
     st.markdown("### 3 · Load the context")
     st.write(
         "Choose a location, optionally choose a calamity, and click **Load live situational context**. "
-        "The page will show current measurements, source health, a no-key OpenStreetMap event map, nearest-event summary and downloadable context rows."
+        "The page will show current measurements, source status, a nearby-event map and detailed source tabs."
     )
     render_disclaimer()
     st.stop()
@@ -186,7 +186,8 @@ with st.spinner("Loading weather, air quality and disaster-event context..."):
         }
     sachet = fetch_disaster_alerts()
 
-# Spatially filter GDACS so global events are not presented as city-local.
+# Calamity filtering for GDACS, followed by a real coordinate-distance filter so
+# the page does not present remote global events as if they were local.
 gdacs_events = list(gdacs.get("events", []))
 if calamity != "All calamities" and calamity in GDACS_TYPE_MAP:
     wanted = GDACS_TYPE_MAP[calamity]
@@ -201,28 +202,28 @@ for row in gdacs_events:
         event_lon = float(row.get("longitude"))
     except (TypeError, ValueError):
         continue
-    distance = haversine_km(lat, lon, event_lat, event_lon)
-    if distance <= radius_km:
+    if haversine_km(lat, lon, event_lat, event_lon) <= radius_km:
         local = dict(row)
-        local["distance_km"] = round(distance, 1)
+        local["distance_km"] = round(haversine_km(lat, lon, event_lat, event_lon), 1)
         gdacs_nearby.append(local)
 
 gdacs["events"] = gdacs_nearby
+
 weather_current = weather.get("current", {})
 weather_units = weather.get("current_units", {})
 air_current = air.get("current", {})
 air_units = air.get("current_units", {})
 
-# Normalize event rows for map/table/export and compute true distance from the selected location.
 combined_events = []
 for row in usgs.get("events", []):
     try:
-        event_lat = float(row.get("latitude")); event_lon = float(row.get("longitude"))
+        event_lat = float(row.get("latitude"))
+        event_lon = float(row.get("longitude"))
     except (TypeError, ValueError):
         continue
     combined_events.append({
-        "source": "USGS", "event": f"M{row.get('magnitude')} {row.get('place') or 'Earthquake'}",
-        "type": "Earthquake", "latitude": event_lat, "longitude": event_lon,
+        "source": "USGS", "event": row.get("place") or "Earthquake", "type": "Earthquake",
+        "latitude": event_lat, "longitude": event_lon,
         "distance_km": round(haversine_km(lat, lon, event_lat, event_lon), 1),
         "time": row.get("time"), "url": row.get("detail_url"),
     })
@@ -234,7 +235,8 @@ for row in gdacs_nearby:
     })
 for row in eonet.get("events", []):
     try:
-        event_lat = float(row.get("latitude")); event_lon = float(row.get("longitude"))
+        event_lat = float(row.get("latitude"))
+        event_lon = float(row.get("longitude"))
     except (TypeError, ValueError):
         continue
     combined_events.append({
@@ -270,7 +272,7 @@ else:
 
 # Lightweight operational interpretation; it intentionally does not alter risk scoring.
 interpretation = []
-if precipitation is not None and float(precipitation) > 0:
+if precip is not None and float(precip) > 0:
     interpretation.append("Current precipitation is being observed.")
 if wind is not None and float(wind) >= 40:
     interpretation.append("Strong surface wind is present; field teams should verify local conditions.")
@@ -299,75 +301,96 @@ for column, label, source in [
         render_data_mode_indicator(source.get("mode", "DEMO"))
 
 st.markdown("### Nearby-event map")
-# Direct OpenStreetMap tiles: no API key/token is required.
 event_map = folium.Map(location=[lat, lon], zoom_start=6 if radius_km >= 500 else 8, tiles=None, control_scale=True)
 folium.TileLayer(
     tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attr="© OpenStreetMap contributors",
+    attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     name="OpenStreetMap",
     overlay=False,
     control=False,
 ).add_to(event_map)
+folium.Circle(
+    [lat, lon], radius=radius_km * 1000.0, color="#1a73e8", weight=1.5,
+    fill=False, opacity=0.45, tooltip=f"Regional query radius: {radius_km} km",
+).add_to(event_map)
 folium.Marker([lat, lon], tooltip=f"Selected location: {name}", icon=folium.Icon(color="blue", icon="info-sign")).add_to(event_map)
-folium.Circle([lat, lon], radius=radius_km * 1000, color="#1565c0", weight=1, fill=False, opacity=0.35, tooltip=f"Search radius: {radius_km} km").add_to(event_map)
 
-for row in combined_events:
+for row in usgs.get("events", []):
     try:
-        event_lat = float(row.get("latitude")); event_lon = float(row.get("longitude"))
+        event_lat = float(row.get("latitude"))
+        event_lon = float(row.get("longitude"))
     except (TypeError, ValueError):
         continue
-    color = "purple" if row["source"] == "USGS" else "orange" if row["source"] == "GDACS" else "green"
     folium.CircleMarker(
-        [event_lat, event_lon], radius=7, color=color, fill=True, fill_opacity=0.82,
-        tooltip=f"{row['source']} · {row['event']} · {row['distance_km']} km",
+        [event_lat, event_lon], radius=6, color="#7e57c2", fill=True, fill_opacity=0.8,
+        tooltip=f"USGS M{row.get('magnitude')} · {row.get('place', 'Earthquake')}",
     ).add_to(event_map)
 
-st_folium(event_map, height=450, width=1400, returned_objects=[])
-st.caption("Basemap uses direct OpenStreetMap tiles and requires no API key. The blue ring is the selected search radius, not a hazard boundary.")
+for row in gdacs_nearby:
+    try:
+        event_lat = float(row.get("latitude"))
+        event_lon = float(row.get("longitude"))
+    except (TypeError, ValueError):
+        continue
+    folium.CircleMarker(
+        [event_lat, event_lon], radius=7, color="#d84315", fill=True, fill_opacity=0.8,
+        tooltip=f"GDACS {row.get('event_type', '')} · {row.get('name') or row.get('country') or 'Event'} · {row.get('distance_km')} km",
+    ).add_to(event_map)
+
+for row in eonet.get("events", []):
+    try:
+        event_lat = float(row.get("latitude"))
+        event_lon = float(row.get("longitude"))
+    except (TypeError, ValueError):
+        continue
+    folium.CircleMarker(
+        [event_lat, event_lon], radius=7, color="#2e7d32", fill=True, fill_opacity=0.8,
+        tooltip=f"NASA EONET · {row.get('title', 'Natural event')}",
+    ).add_to(event_map)
+
+st_folium(event_map, height=430, width=1400, returned_objects=[])
+st.caption("Basemap: OpenStreetMap public tiles. No map API key or token is required.")
+
+if not combined_events:
+    st.success("No matching nearby disaster event was returned in the selected time/radius window. Weather and air-quality context are still shown above.")
 
 if combined_events:
-    event_df = pd.DataFrame(combined_events)
+    events_df = pd.DataFrame(combined_events)
     st.markdown("### Nearby event register")
-    st.dataframe(event_df[[c for c in ["source", "event", "type", "distance_km", "time"] if c in event_df.columns]], width="stretch", hide_index=True)
+    show_cols = [c for c in ["source", "type", "event", "distance_km", "time", "latitude", "longitude", "url"] if c in events_df.columns]
+    st.dataframe(events_df[show_cols], width="stretch", hide_index=True)
     st.download_button(
-        "Download nearby events CSV",
-        event_df.to_csv(index=False).encode("utf-8"),
-        file_name="live_context_events.csv",
+        "Download nearby events (CSV)",
+        data=events_df.to_csv(index=False).encode("utf-8"),
+        file_name="nearby_live_events.csv",
         mime="text/csv",
         width="stretch",
     )
 
-with st.expander("Source diagnostics"):
-    diagnostics = []
-    for label, source in [("Weather", weather), ("Air Quality", air), ("USGS", usgs), ("GDACS", gdacs), ("NASA EONET", eonet), ("IMD", imd), ("SACHET", sachet)]:
-        diagnostics.append({
-            "source": label,
-            "mode": source.get("mode", "DEMO"),
-            "stale": source.get("stale", False),
-            "error": source.get("error") or "",
-            "access_status": source.get("access_status") or "",
-        })
-    st.dataframe(pd.DataFrame(diagnostics), width="stretch", hide_index=True)
-
 st.divider()
-tabs = st.tabs(["Weather", "Air Quality", "USGS Earthquakes", "GDACS Nearby", "NASA EONET", "IMD", "NDMA SACHET"])
+tabs = st.tabs(["Weather", "Air Quality", "USGS Earthquakes", "GDACS Nearby", "NASA EONET", "IMD", "NDMA SACHET", "Diagnostics"])
 
 with tabs[0]:
     if weather_current:
-        table = pd.DataFrame([weather_current]).T.reset_index(); table.columns = ["Variable", "Value"]
+        table = pd.DataFrame([weather_current]).T.reset_index()
+        table.columns = ["Variable", "Value"]
         st.dataframe(table, width="stretch", hide_index=True)
     else:
         st.info("No current weather response is available.")
-        if weather.get("error"): st.caption(weather["error"])
+        if weather.get("error"):
+            st.caption(weather["error"])
     st.caption("Weather is real external context; it does not automatically alter the frozen red-zone risk score.")
 
 with tabs[1]:
     if air_current:
-        table = pd.DataFrame([air_current]).T.reset_index(); table.columns = ["Variable", "Value"]
+        table = pd.DataFrame([air_current]).T.reset_index()
+        table.columns = ["Variable", "Value"]
         st.dataframe(table, width="stretch", hide_index=True)
     else:
         st.info("No air-quality response is available.")
-        if air.get("error"): st.caption(air["error"])
+        if air.get("error"):
+            st.caption(air["error"])
+    st.caption("Air-quality values provide environmental context for haze, smoke, dust and heat operations; they are not a calibrated red-zone input.")
 
 with tabs[2]:
     earthquakes = pd.DataFrame(usgs.get("events", []))
@@ -384,12 +407,14 @@ with tabs[3]:
     else:
         show = [c for c in ["event_type", "name", "country", "alert_level", "severity", "distance_km", "from_date", "to_date", "url"] if c in events.columns]
         st.dataframe(events[show], width="stretch", hide_index=True)
+    st.caption("GDACS rows shown here are spatially filtered around the selected location rather than presented as generic global events.")
 
 with tabs[4]:
     events = pd.DataFrame(eonet.get("events", []))
     if events.empty:
         st.info("No NASA EONET event was returned inside the selected regional window/category/time range.")
-        if eonet.get("error"): st.caption(eonet["error"])
+        if eonet.get("error"):
+            st.caption(eonet["error"])
     else:
         show = [c for c in ["title", "categories", "latest_date", "magnitude", "magnitude_unit", "latitude", "longitude", "closed", "api_link"] if c in events.columns]
         st.dataframe(events[show], width="stretch", hide_index=True)
@@ -399,11 +424,14 @@ with tabs[5]:
         st.warning("The official IMD endpoint responded but this client/IP is not authorized for direct API access.")
     elif imd.get("access_status") == "LOCATION_NOT_MAPPED":
         st.info("No arbitrary-city IMD district alias is guessed; verified district mapping is required.")
-    warnings = pd.DataFrame(imd.get("warnings", [])); rainfall = pd.DataFrame(imd.get("rainfall", []))
+    warnings = pd.DataFrame(imd.get("warnings", []))
+    rainfall = pd.DataFrame(imd.get("rainfall", []))
     if not warnings.empty:
-        st.markdown("#### District warnings"); st.dataframe(warnings, width="stretch", hide_index=True)
+        st.markdown("#### District warnings")
+        st.dataframe(warnings, width="stretch", hide_index=True)
     if not rainfall.empty:
-        st.markdown("#### District rainfall"); st.dataframe(rainfall, width="stretch", hide_index=True)
+        st.markdown("#### District rainfall")
+        st.dataframe(rainfall, width="stretch", hide_index=True)
 
 with tabs[6]:
     alerts = pd.DataFrame(sachet.get("alerts", []))
@@ -413,6 +441,22 @@ with tabs[6]:
         show = [c for c in ["event", "severity", "urgency", "area", "headline", "published"] if c in alerts.columns]
         st.dataframe(alerts[show], width="stretch", hide_index=True)
     st.caption("SACHET is labelled LIVE only when a verified feed identifier is configured.")
+
+with tabs[7]:
+    diagnostics = []
+    for label, source in [
+        ("Open-Meteo weather", weather), ("Open-Meteo air", air), ("USGS", usgs),
+        ("GDACS", gdacs), ("NASA EONET", eonet), ("IMD", imd), ("NDMA SACHET", sachet),
+    ]:
+        diagnostics.append({
+            "source": label,
+            "mode": source.get("mode", "DEMO"),
+            "stale": source.get("stale", False),
+            "error": source.get("error"),
+            "access_status": source.get("access_status"),
+        })
+    st.dataframe(pd.DataFrame(diagnostics), width="stretch", hide_index=True)
+    st.caption("Use this tab during troubleshooting to distinguish a genuine zero-event result from an API/network/authorization issue.")
 
 st.divider()
 st.markdown("### How this helps the EOC")
