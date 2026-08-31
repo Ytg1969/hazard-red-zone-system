@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.batch_relocation import plan_batch_relocation  # noqa: E402
 from src.pipeline import (  # noqa: E402
     calculate_summary,
     enrich_habitations,
@@ -18,7 +19,7 @@ from src.pipeline import (  # noqa: E402
     load_demo_hazards,
 )
 from src.relocation import allocate_population, rank_shelters, recommend_shelter  # noqa: E402
-from src.report_generator import generate_action_plan  # noqa: E402
+from src.report_generator import generate_action_plan, generate_action_plan_pdf  # noqa: E402
 from src.risk_engine import calculate_risk  # noqa: E402
 
 
@@ -81,6 +82,23 @@ def run_demo_gate() -> dict:
         if assigned > capacity_by_shelter.get(shelter_id, 0):
             raise RuntimeError("allocation exceeds shelter available capacity")
 
+    batch = plan_batch_relocation(habitations, shelters)
+    if batch["allocated_population"] + batch["remaining_deficit"] != batch["required_population"]:
+        raise RuntimeError("system-wide relocation plan violates population accounting")
+    batch_by_shelter: dict[str, int] = {}
+    for item in batch["allocations"]:
+        shelter_id = str(item["shelter_id"])
+        batch_by_shelter[shelter_id] = batch_by_shelter.get(shelter_id, 0) + int(
+            item["assigned_population"]
+        )
+    all_capacity_by_shelter = {
+        str(row["shelter_id"]): int(row["available_capacity"])
+        for row in shelters.to_dict(orient="records")
+    }
+    for shelter_id, assigned in batch_by_shelter.items():
+        if assigned > all_capacity_by_shelter.get(shelter_id, 0):
+            raise RuntimeError("system-wide allocation double-books shelter capacity")
+
     risk = calculate_risk(top)
     action_plan = generate_action_plan(
         habitation=top,
@@ -99,6 +117,16 @@ def run_demo_gate() -> dict:
     if not all(text in action_plan for text in required_report_text):
         raise RuntimeError("draft action-plan export is incomplete")
 
+    pdf_plan = generate_action_plan_pdf(
+        habitation=top,
+        risk=risk,
+        relocation=relocation,
+        allocation=allocation,
+        data_mode="DEMO",
+    )
+    if not pdf_plan.startswith(b"%PDF") or len(pdf_plan) < 1000:
+        raise RuntimeError("PDF action-plan export is invalid")
+
     return {
         "demo_ready": True,
         "data_mode": "DEMO",
@@ -112,7 +140,11 @@ def run_demo_gate() -> dict:
         "sample_required_population": required,
         "sample_allocated_population": allocated,
         "sample_remaining_deficit": deficit,
+        "batch_required_population": int(batch["required_population"]),
+        "batch_allocated_population": int(batch["allocated_population"]),
+        "batch_remaining_deficit": int(batch["remaining_deficit"]),
         "action_plan_export": "PASS",
+        "pdf_action_plan_export": "PASS",
         "required_pages": [str(path.relative_to(ROOT)) for path in REQUIRED_PAGES],
     }
 
