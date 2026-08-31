@@ -4,29 +4,19 @@ import streamlit as st
 
 from src.pipeline import enrich_habitations, load_demo_data, load_demo_hazards
 from src.risk_engine import DEFAULT_WEIGHTS
-from src.ui_theme import (
-    inject_global_css,
-    render_data_mode_indicator,
-    render_disclaimer,
-    render_page_header,
-)
+from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header
 
 st.set_page_config(page_title="Scenario Studio", layout="wide")
 inject_global_css()
-render_page_header(
-    "Scenario Studio",
-    "Adjust risk-factor emphasis and measure how classifications change. Scenario outputs are decision-support comparisons, not official thresholds.",
-)
+render_page_header("Scenario Studio", "Test policy emphasis under Flood, Cyclone, Landslide, Earthquake, Drought or Combined hazard scenarios.")
 render_data_mode_indicator("DEMO")
+city, hazard_profile = render_demo_scope_controls("scenario")
 
 try:
-    habitations_raw, _ = load_demo_data()
-    try:
-        hazards = load_demo_hazards()
-    except Exception:
-        hazards = None
-except Exception:
-    st.error("Unable to load the demonstration habitation dataset.")
+    habitations_raw, _ = load_demo_data(city)
+    hazards = load_demo_hazards()
+except Exception as exc:
+    st.error(f"Unable to load the demonstration dataset: {exc}")
     render_disclaimer()
     st.stop()
 
@@ -36,57 +26,31 @@ PRESETS = {
     "Vulnerability Priority": {"hazard": 0.25, "exposure": 0.20, "vulnerability": 0.40, "accessibility": 0.15},
     "Evacuation Access Priority": {"hazard": 0.25, "exposure": 0.20, "vulnerability": 0.20, "accessibility": 0.35},
 }
-
 preset_name = st.selectbox("Scenario preset", list(PRESETS))
 preset = PRESETS[preset_name]
+st.caption(f"Active hazard profile: **{hazard_profile.title()}** · Baseline and scenario use the same hazard profile so the comparison isolates policy-weight changes.")
 
 st.markdown("### Risk factor emphasis")
 cols = st.columns(4)
 raw_values = {}
-labels = {
-    "hazard": "Hazard",
-    "exposure": "Exposure",
-    "vulnerability": "Vulnerability",
-    "accessibility": "Evacuation Difficulty",
-}
+labels = {"hazard":"Hazard","exposure":"Exposure","vulnerability":"Vulnerability","accessibility":"Evacuation Difficulty"}
 for col, key in zip(cols, ["hazard", "exposure", "vulnerability", "accessibility"]):
     with col:
-        raw_values[key] = st.slider(
-            labels[key],
-            min_value=0.0,
-            max_value=1.0,
-            value=float(preset[key]),
-            step=0.05,
-            key=f"scenario_{preset_name}_{key}",
-        )
-
+        raw_values[key] = st.slider(labels[key], 0.0, 1.0, float(preset[key]), 0.05, key=f"scenario_{preset_name}_{key}")
 raw_sum = sum(raw_values.values())
 if raw_sum <= 0:
     st.error("At least one factor must have a non-zero weight.")
     render_disclaimer()
     st.stop()
-
 normalized = {key: value / raw_sum for key, value in raw_values.items()}
-st.caption(
-    "Weights are automatically normalized to sum to 1.00. "
-    + " · ".join(f"{labels[k]} {v:.0%}" for k, v in normalized.items())
-)
+st.caption("Weights are automatically normalized to 1.00. " + " · ".join(f"{labels[k]} {v:.0%}" for k, v in normalized.items()))
 
-baseline = enrich_habitations(habitations_raw, weights=DEFAULT_WEIGHTS, hazard_data=hazards)
-scenario = enrich_habitations(habitations_raw, weights=normalized, hazard_data=hazards)
-
-comparison = baseline[
-    ["habitation_id", "name", "population", "risk_score", "risk_level"]
-].rename(columns={"risk_score": "baseline_score", "risk_level": "baseline_level"})
-comparison = comparison.merge(
-    scenario[["habitation_id", "risk_score", "risk_level"]].rename(
-        columns={"risk_score": "scenario_score", "risk_level": "scenario_level"}
-    ),
-    on="habitation_id",
-)
+baseline = enrich_habitations(habitations_raw, weights=DEFAULT_WEIGHTS, hazard_data=hazards, hazard_type=hazard_profile)
+scenario = enrich_habitations(habitations_raw, weights=normalized, hazard_data=hazards, hazard_type=hazard_profile)
+comparison = baseline[["habitation_id", "name", "population", "risk_score", "risk_level"]].rename(columns={"risk_score":"baseline_score","risk_level":"baseline_level"})
+comparison = comparison.merge(scenario[["habitation_id", "risk_score", "risk_level"]].rename(columns={"risk_score":"scenario_score","risk_level":"scenario_level"}), on="habitation_id")
 comparison["changed_class"] = comparison["baseline_level"] != comparison["scenario_level"]
 comparison["score_change"] = comparison["scenario_score"] - comparison["baseline_score"]
-
 changed = comparison[comparison["changed_class"]]
 population_affected = int(changed["population"].sum())
 
@@ -99,60 +63,13 @@ m4.metric("Scenario Critical", int((comparison["scenario_level"] == "CRITICAL").
 st.divider()
 left, right = st.columns(2, gap="large")
 with left:
-    class_counts = pd.DataFrame(
-        {
-            "Risk Level": ["CRITICAL", "HIGH", "MODERATE", "LOW"],
-            "Baseline": [
-                int((comparison["baseline_level"] == level).sum())
-                for level in ["CRITICAL", "HIGH", "MODERATE", "LOW"]
-            ],
-            "Scenario": [
-                int((comparison["scenario_level"] == level).sum())
-                for level in ["CRITICAL", "HIGH", "MODERATE", "LOW"]
-            ],
-        }
-    ).melt(id_vars="Risk Level", var_name="Model", value_name="Habitations")
-    fig = px.bar(
-        class_counts,
-        x="Risk Level",
-        y="Habitations",
-        color="Model",
-        barmode="group",
-        title="Risk-Class Distribution",
-    )
-    fig.update_layout(height=370, margin=dict(l=20, r=20, t=55, b=20))
-    st.plotly_chart(fig, width="stretch")
-
+    class_counts = pd.DataFrame({"Risk Level":["CRITICAL","HIGH","MODERATE","LOW"], "Baseline":[int((comparison["baseline_level"]==level).sum()) for level in ["CRITICAL","HIGH","MODERATE","LOW"]], "Scenario":[int((comparison["scenario_level"]==level).sum()) for level in ["CRITICAL","HIGH","MODERATE","LOW"]]}).melt(id_vars="Risk Level", var_name="Model", value_name="Habitations")
+    st.plotly_chart(px.bar(class_counts, x="Risk Level", y="Habitations", color="Model", barmode="group", title="Risk-Class Distribution"), width="stretch")
 with right:
-    fig = px.scatter(
-        comparison,
-        x="baseline_score",
-        y="scenario_score",
-        hover_name="name",
-        size="population",
-        color="scenario_level",
-        title="Baseline vs Scenario Risk Score",
-        labels={"baseline_score": "Baseline Score", "scenario_score": "Scenario Score"},
-    )
+    fig = px.scatter(comparison, x="baseline_score", y="scenario_score", hover_name="name", size="population", color="scenario_level", title="Baseline vs Scenario Risk Score")
     fig.add_shape(type="line", x0=0, y0=0, x1=100, y1=100, line=dict(dash="dash"))
-    fig.update_layout(height=370, margin=dict(l=20, r=20, t=55, b=20))
     st.plotly_chart(fig, width="stretch")
 
 st.subheader("Locations most affected by the scenario")
-st.dataframe(
-    comparison.sort_values("score_change", key=lambda s: s.abs(), ascending=False)[
-        [
-            "name",
-            "population",
-            "baseline_score",
-            "scenario_score",
-            "score_change",
-            "baseline_level",
-            "scenario_level",
-        ]
-    ],
-    width="stretch",
-    hide_index=True,
-)
-
+st.dataframe(comparison.sort_values("score_change", key=lambda s: s.abs(), ascending=False)[["name","population","baseline_score","scenario_score","score_change","baseline_level","scenario_level"]], width="stretch", hide_index=True)
 render_disclaimer()
