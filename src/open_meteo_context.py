@@ -1,4 +1,4 @@
-"""Reliable no-auth weather context for the three-city demo.
+"""Reliable no-auth weather context with LIVE→CACHED behavior.
 
 Open-Meteo provides forecast/current weather data without an API key. This
 adapter is contextual evidence only: it never silently modifies the frozen
@@ -6,6 +6,7 @@ hazard/risk score. LIVE responses are cached; failures fall back to CACHED.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -20,15 +21,15 @@ CITY_CENTERS = {
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 
-def fetch_weather_context(city: str, *, timeout: float = 6.0) -> dict:
-    if city not in CITY_CENTERS:
-        raise ValueError(f"weather context requires one of {sorted(CITY_CENTERS)}")
+def _cache_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")[:80] or "location"
 
-    lat, lon = CITY_CENTERS[city]
+
+def fetch_weather_at_location(name: str, latitude: float, longitude: float, *, timeout: float = 6.0) -> dict:
     params = urlencode(
         {
-            "latitude": lat,
-            "longitude": lon,
+            "latitude": float(latitude),
+            "longitude": float(longitude),
             "current": "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_gusts_10m",
             "hourly": "precipitation_probability,precipitation,rain,wind_speed_10m,wind_gusts_10m",
             "forecast_days": 2,
@@ -38,7 +39,7 @@ def fetch_weather_context(city: str, *, timeout: float = 6.0) -> dict:
     envelope = fetch_json_with_cache(
         source="Open-Meteo Forecast API",
         url=f"{OPEN_METEO_URL}?{params}",
-        cache_path=Path("data/cache/open_meteo") / f"{city.lower()}_weather.json",
+        cache_path=Path("data/cache/open_meteo") / f"{_cache_key(name)}_weather.json",
         timeout=timeout,
     )
 
@@ -53,11 +54,18 @@ def fetch_weather_context(city: str, *, timeout: float = 6.0) -> dict:
         "stale": envelope.stale,
         "fetched_at": envelope.fetched_at,
         "source_url": envelope.source_url,
-        "city": city,
-        "latitude": payload.get("latitude"),
-        "longitude": payload.get("longitude"),
+        "city": name,
+        "latitude": payload.get("latitude", latitude),
+        "longitude": payload.get("longitude", longitude),
         "timezone": payload.get("timezone"),
         "current": current,
         "current_units": units,
         "hourly": hourly,
     }
+
+
+def fetch_weather_context(city: str, *, timeout: float = 6.0) -> dict:
+    if city not in CITY_CENTERS:
+        raise ValueError(f"weather context requires one of {sorted(CITY_CENTERS)}")
+    lat, lon = CITY_CENTERS[city]
+    return fetch_weather_at_location(city, lat, lon, timeout=timeout)
