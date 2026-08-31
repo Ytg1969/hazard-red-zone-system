@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 
 from src.live_data import fetch_json_with_cache
 
@@ -50,18 +51,14 @@ COLOR_LEVELS = {
 
 
 def _records(payload: Any) -> list[dict]:
-    """Normalize common IMD JSON response shapes to a list of dictionaries."""
     if isinstance(payload, list):
         return [row for row in payload if isinstance(row, dict)]
     if not isinstance(payload, dict):
         return []
-
     for key in ("data", "records", "result", "results"):
         value = payload.get(key)
         if isinstance(value, list):
             return [row for row in value if isinstance(row, dict)]
-
-    # Some endpoints may return one record directly.
     if any(str(key).lower() in {"district", "obj_id", "date"} for key in payload):
         return [payload]
     return []
@@ -84,7 +81,6 @@ def _city_match(city: str, row: dict) -> bool:
 
 
 def normalize_warning_record(row: dict) -> dict:
-    """Convert an IMD district-warning row into a compact display record."""
     normalized = {
         "district": _field(row, "district", "district_name", "name"),
         "issued_date": _field(row, "date"),
@@ -102,20 +98,28 @@ def normalize_warning_record(row: dict) -> dict:
 
 
 def normalize_rainfall_record(row: dict) -> dict:
-    """Preserve IMD rainfall fields while surfacing common district/date keys."""
     output = dict(row)
     output["district"] = _field(row, "district", "district_name", "name")
     output["date"] = _field(row, "date")
     return output
 
 
+def _record_error(result: dict, label: str, exc: Exception) -> None:
+    if isinstance(exc, HTTPError) and exc.code in {401, 403}:
+        result["access_status"] = "AUTHORIZATION_REQUIRED"
+        result["errors"].append(
+            f"{label}: HTTP {exc.code} — IMD endpoint reached, but this client/IP is not authorized for direct API access."
+        )
+    else:
+        result["errors"].append(f"{label}: {exc}")
+
+
 def fetch_imd_context(city: str, *, timeout: float = 6.0) -> dict:
     """Fetch district warnings and rainfall from official IMD endpoints.
 
-    Successful calls are LIVE and are cached to disk. On a later network/API
-    failure, the shared data layer returns the last successful response as
-    CACHED. If no live or cached response is available, this function returns a
-    DEMO-mode empty context plus error text rather than fabricating observations.
+    A 401/403 response is surfaced as AUTHORIZATION_REQUIRED rather than being
+    presented as a generic network failure. No TLS verification is disabled and
+    no observations are fabricated when direct API access is unavailable.
     """
     if city not in CITY_DISTRICT_ALIASES:
         raise ValueError(f"IMD context requires one of {sorted(CITY_DISTRICT_ALIASES)}")
@@ -123,6 +127,7 @@ def fetch_imd_context(city: str, *, timeout: float = 6.0) -> dict:
     result = {
         "source": "India Meteorological Department (IMD)",
         "mode": "DEMO",
+        "access_status": "UNAVAILABLE",
         "stale": False,
         "warnings": [],
         "rainfall": [],
@@ -140,13 +145,12 @@ def fetch_imd_context(city: str, *, timeout: float = 6.0) -> dict:
             cache_path=Path("data/cache/imd") / "district_warnings.json",
             timeout=timeout,
         )
-        warnings = [normalize_warning_record(row) for row in _records(warning_env.payload) if _city_match(city, row)]
-        result["warnings"] = warnings
+        result["warnings"] = [normalize_warning_record(row) for row in _records(warning_env.payload) if _city_match(city, row)]
         result["warning_fetched_at"] = warning_env.fetched_at
         modes.append(warning_env.mode)
         stale = stale or warning_env.stale
     except Exception as exc:
-        result["errors"].append(f"Warning API: {exc}")
+        _record_error(result, "Warning API", exc)
 
     try:
         rainfall_env = fetch_json_with_cache(
@@ -155,17 +159,15 @@ def fetch_imd_context(city: str, *, timeout: float = 6.0) -> dict:
             cache_path=Path("data/cache/imd") / "district_rainfall.json",
             timeout=timeout,
         )
-        rainfall = [normalize_rainfall_record(row) for row in _records(rainfall_env.payload) if _city_match(city, row)]
-        result["rainfall"] = rainfall
+        result["rainfall"] = [normalize_rainfall_record(row) for row in _records(rainfall_env.payload) if _city_match(city, row)]
         result["rainfall_fetched_at"] = rainfall_env.fetched_at
         modes.append(rainfall_env.mode)
         stale = stale or rainfall_env.stale
     except Exception as exc:
-        result["errors"].append(f"Rainfall API: {exc}")
+        _record_error(result, "Rainfall API", exc)
 
-    # LIVE only when every successful component is live; any cached component
-    # makes the combined context CACHED. No successful component stays DEMO.
     if modes:
         result["mode"] = "CACHED" if "CACHED" in modes else "LIVE"
+        result["access_status"] = "AVAILABLE"
     result["stale"] = stale
     return result
