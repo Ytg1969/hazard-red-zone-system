@@ -1,75 +1,75 @@
-# SIH26191 — Hazard Red Zone Decision Support System
+# SIH26191 — Multi-Hazard Red Zone Decision Support System
 
-A Streamlit-based geospatial decision-support prototype for identifying hazard-based red zones, assessing safe-zone/shelter carrying capacity, and prioritizing relocation of vulnerable habitations.
+A Streamlit-based geospatial decision-support prototype for identifying hazard-based red zones, explaining risk, checking shelter carrying capacity and producing capacity-aware relocation recommendations.
 
 ## Core workflow
 
-`Data → GIS Exposure → Vulnerability → Risk → Carrying Capacity → Routing → Relocation → Dashboard → Draft Action Plan`
+`Data → GIS Exposure → Multi-Hazard Profile → Vulnerability → Explainable Risk → Carrying Capacity → Routing → Relocation/Optimization → Dashboard → Draft Action Plan`
 
-## Current implementation status
+## Current demo capability
 
-The stable offline core demo is merged to `main` and is the recommended presentation baseline.
+The presentation path now includes:
 
-The core demo includes:
-
-- frozen habitation and shelter data contracts;
-- deterministic offline demonstration data;
-- synthetic GeoJSON hazard polygons for GIS pipeline testing;
-- vector hazard intersection/proximity scoring;
-- explainable weighted risk scoring with configurable weights;
-- vulnerability scoring and phased relocation priority;
+- **Flood, Cyclone, Landslide, Earthquake, Drought and Combined Multi-Hazard** profiles;
+- transparent hazard-indicator scoring with missing-data re-normalization and completeness reporting;
+- frozen final risk contract: `0.35H + 0.25E + 0.25V + 0.15A`;
+- real-geography demo contexts for **Puri, Guwahati and Chennai**;
+- synthetic but realistic-scale operational catchment/shelter scenario data, always labelled `DEMO`;
+- synthetic multi-city hazard GeoJSON footprints for map demonstration;
+- experimental KMeans coordination zones that do not alter risk/relocation decisions;
 - limiting-resource carrying capacity with VALIDATED / PARTIAL / UNVALIDATED status;
-- multi-criteria shelter ranking;
-- capacity-safe multi-shelter population allocation;
-- system-wide priority allocation that prevents shelter capacity from being double-booked across multiple habitations;
-- cached OSM GraphML routing support with a clearly labelled haversine fallback;
-- Command Center, Red Zone Map, Risk Analysis, Relocation Planner, Scenario Studio and Methodology pages;
-- Markdown and PDF draft action-plan export;
-- optional CAP/RSS external-alert panel with strict LIVE / CACHED / DEMO labeling;
-- LIVE / CACHED / DEMO data-mode infrastructure;
-- automated tests and GitHub Actions CI;
-- reproducible Docker deployment support.
+- safe-shelter ranking and multi-shelter population splitting;
+- system-wide priority allocation preventing double-booked capacity;
+- optional safety-gated NetworkX network-simplex global optimization comparison;
+- cached OSM GraphML routing with labelled haversine fallback;
+- Markdown and PDF action-plan export;
+- custom habitation/shelter CSV validation and template workflow;
+- NDMA SACHET-compatible CAP/RSS alert infrastructure with strict LIVE/CACHED/DEMO handling;
+- optional USGS FDSN earthquake context with LIVE→CACHED behavior;
+- Docker deployment support, tests and GitHub Actions CI.
 
-## Demo now
+## Demo data honesty
 
-On Windows PowerShell:
+Puri, Guwahati and Chennai are **representative high-risk Indian geographies**, not a definitive ranking of India's three most disaster-prone cities.
+
+The city coordinates/geographic context are real, while bundled habitation catchment populations, shelter capacities/occupancies, hazard indicator values and hazard polygons are **synthetic operational DEMO scenarios**. They exist to exercise the pipeline without pretending unavailable operational data is real.
+
+See `docs/multicity_demo_sources.md` for official hazard-context references and exact limitations.
+
+The prototype hazard indicator weights/bounds are visible in `src/hazard_model.py`. They are **not official hazard standards**. Authoritative deployments should replace them with verified source-specific mappings.
+
+## Run the demo
+
+Windows PowerShell:
 
 ```powershell
 cd C:\Users\<user>\Project\hazard-red-zone-system
 git fetch origin
 git checkout main
 git pull origin main
+py -3.13 -m pip install -r requirements.txt
 py -3.13 scripts/demo_gate.py
 py -3.13 -m pytest tests -q
 py -3.13 -m streamlit run app.py
 ```
 
-`demo_gate.py` validates the deterministic offline path, including risk scoring, shelter capacity, safe-shelter recommendation, single-habitation allocation, system-wide capacity accounting, and both Markdown/PDF action-plan generation. It should report `"demo_ready": true` before the presentation.
+The demo gate checks all five named hazard profiles plus Combined Multi-Hazard, the three-city dataset, frozen risk classes, local/capacity-safe relocation, batch no-double-booking, global optimizer accounting and both Markdown/PDF export. It should report `"demo_ready": true`.
 
-Recommended 3-minute flow:
+## Suggested five-minute walkthrough
 
-1. **Operational Overview** — show EOC KPIs and the highest-risk habitation.
-2. **Red Zone Map** — show spatial red-zone identification.
-3. **Risk Analysis** — explain the factor contributions behind the score.
-4. **Relocation Planner** — show safe-shelter filtering, capacity-aware allocation, system-wide no-double-booking plan and routing mode.
-5. **Scenario Studio** — optionally adjust weights and show classification sensitivity.
-6. **Draft Action Plan** — export the administrative decision-support output as Markdown or PDF.
+1. **Operational Overview** — All Demo Cities + Combined Multi-Hazard.
+2. **Red Zone Map** — switch Puri / Guwahati / Chennai and show DEMO hazard footprints.
+3. **Risk Analysis** — choose a named hazard and show indicator contributions + final risk contributions.
+4. **Relocation Planner** — safe-shelter ranking, split allocation, deficit and system-wide capacity sharing.
+5. **Scenario Studio** — adjust risk policy weights and show classification impact.
+6. **Command Center** — show CAP/RSS alert infrastructure and optional external context.
+7. **Export** — download the PDF action plan.
 
-## Data honesty
-
-Bundled hazard polygons, habitation records and shelter records are demonstration data unless explicitly replaced by an authoritative source. The UI must never present `DEMO` or `CACHED` data as `LIVE`.
-
-Synthetic data is used to test the system pipeline and UI. It must not be used to claim scientific model accuracy or real-world hazard validation.
-
-The optional alert panel is isolated from risk scoring. It becomes `LIVE` only when a verified external CAP/RSS endpoint is explicitly configured. Otherwise it stays `DEMO` or uses a labelled cache.
+See `docs/demo_guide.md` and `docs/pre_demo_checklist.md`.
 
 ## Risk model
 
-Default explainable score:
-
 `Risk = 0.35 × Hazard + 0.25 × Exposure + 0.25 × Vulnerability + 0.15 × Evacuation Difficulty`
-
-All factors are bounded to 0–100 and weights must sum to 1.00.
 
 Risk classes:
 
@@ -78,53 +78,48 @@ Risk classes:
 - HIGH: 50–69
 - CRITICAL: 70–100
 
+Scenario Studio may change policy emphasis, but weights are normalized to sum to 1.00.
+
 ## Carrying capacity
 
-Where resource information exists:
-
-`effective_capacity = min(total, water, sanitation, access)`
+`effective_capacity = min(total, known water, known sanitation, known access/logistics)`
 
 `available_capacity = max(0, effective_capacity - current_occupancy)`
 
-Capacity status:
+Unknown is distinct from zero. Population allocation never exceeds available capacity.
 
-- `VALIDATED` — all defined resource constraints are available;
-- `PARTIAL` — only some resource constraints are available;
-- `UNVALIDATED` — total physical capacity is being used as fallback.
+## External feeds
 
-The batch relocation planner reuses this same capacity calculation after every assignment, so one shelter's remaining capacity is shared across all priority habitations instead of being independently reused.
+### NDMA SACHET
+
+The application includes a CAP/RSS-compatible parser and cache behavior. Configure only a verified endpoint/identifier before presenting it as LIVE. The official SACHET integration guidance requires ETag-aware CAP XML caching.
+
+### USGS earthquake context
+
+`src/earthquake_context.py` uses the official USGS FDSN Event Web Service for optional earthquake context near the three demo geographies. This feed is contextual and does not silently modify the deterministic risk score.
+
+## Custom data
+
+Command Center accepts habitation and shelter CSV uploads after schema validation. Uploaded files are user-supplied and are not automatically treated as live government data. A minimum habitation template is downloadable in the UI.
 
 ## Install
 
-### Recommended: Conda / Miniforge
+### Conda / Miniforge
 
 ```bash
 conda env create -f environment.yml
 conda activate hazard-red-zone
 ```
 
-### Pip alternative
+### Pip
 
 ```bash
 python -m venv venv
-# Windows
 venv\Scripts\activate
 python -m pip install -r requirements.txt
 ```
 
-Python 3.12 is the recommended shared/CI version for the geospatial stack. Python 3.13 can be used locally when the environment installs cleanly.
-
-## Run
-
-```bash
-streamlit run app.py
-```
-
-## Tests
-
-```bash
-python -m pytest tests
-```
+Python 3.12 remains the shared/CI target; Python 3.13 can be used locally when dependencies install cleanly.
 
 ## Docker
 
@@ -133,44 +128,34 @@ docker build -t hazard-red-zone .
 docker run --rm -p 8501:8501 hazard-red-zone
 ```
 
-See `DEPLOYMENT.md` for local, Docker, routing-cache and optional alert-feed setup.
+See `DEPLOYMENT.md`.
 
-## Generate a larger synthetic demo dataset
-
-```bash
-python scripts/generate_demo_data.py --habitations 200 --shelters 20
-```
-
-Generated records are DEMO-only.
-
-## Cache a road network before the demo
+## Cache a road network
 
 ```bash
 python scripts/cache_road_network.py "Puri, Odisha, India"
 ```
 
-Then point the routing engine at the resulting GraphML file:
+PowerShell example:
 
 ```powershell
 $env:SIH_ROAD_GRAPHML="data/cache/roads/Puri_Odisha_India.graphml"
 ```
 
-The app automatically falls back to haversine distance if the cache is unavailable.
+If the graph is unavailable, the app explicitly falls back to haversine distance.
 
-## Development branches
+## Authoritative pilot work
 
-Create new work from the latest `main`. Old implementation branches that have already been merged are not the working baseline.
-
-Current authoritative-pilot development continues separately on `feature/odisha-pilot-data` so incomplete real-data fields cannot destabilize the demo.
+The strict Odisha/Puri authoritative-data integration continues separately from the demo until population/admin details, vulnerability demographics, coordinates, shelter operations and a machine-readable authoritative hazard layer satisfy the provenance/readiness gates. Incomplete authoritative fields must not destabilize the presentation path.
 
 ## Important limitations
 
-- This is a decision-support prototype, not an autonomous evacuation-order system.
-- Current bundled hazard polygons are synthetic demonstration layers.
-- Road conditions and shelter occupancy must be revalidated during real emergencies.
-- External alert feeds require a verified official endpoint before they may be labelled LIVE.
-- Live IMD / NDMA / CWC analytical integrations require verified source access and source-specific adapters.
-- Optional ML validation should only be added when credible historical labels and leakage-safe validation are available.
-- Raw InSAR processing is outside the seven-day core; preprocessed deformation layers can be integrated later.
+- Decision support only; authorized officials make evacuation/relocation decisions.
+- Bundled multi-city operational values and hazard footprints are DEMO.
+- Prototype hazard-profile weights are not official standards.
+- Experimental coordination zones do not determine evacuation.
+- Global optimization compares only shelter candidates already passing safety/capacity gates.
+- Road conditions and shelter occupancy must be revalidated during emergencies.
+- Raw Sentinel-1 InSAR processing remains outside the core; preprocessed layers can be integrated later.
 
-See `docs/team_plan.md`, `docs/data_dictionary.md`, `docs/architecture.md`, `docs/data_sources.md`, `docs/risk_methodology.md`, `docs/demo_script.md`, and `docs/jury_faq.md` before changing shared interfaces.
+Key documentation: `docs/technical_architecture.md`, `docs/multicity_demo_sources.md`, `docs/demo_guide.md`, `docs/pre_demo_checklist.md`, `docs/submission_summary.md`, `docs/jury_faq.md`, `docs/data_dictionary.md`, `docs/risk_methodology.md`.

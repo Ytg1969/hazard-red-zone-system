@@ -1,0 +1,10 @@
+shelter_id,name,demo_city,latitude,longitude,total_capacity,current_occupancy,water_capacity,sanitation_capacity,access_capacity,safety_score,accessibility_score,last_updated,data_mode,demo_basis,source_context
+PURI-S1,Puri Demo Cyclone Shelter A,Puri,19.815,85.835,1600,220,1400,1350,1300,94,86,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+PURI-S2,Puri Demo Relief Centre B,Puri,19.845,85.805,1400,180,1250,1200,1180,90,80,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+PURI-S3,Puri Demo School Shelter C,Puri,19.78,85.79,1200,160,1050,1000,980,88,76,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+GHY-S1,Guwahati Demo Relief Centre A,Guwahati,26.16,91.735,1800,300,1500,1450,1380,92,78,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+GHY-S2,Guwahati Demo School Shelter B,Guwahati,26.19,91.79,1500,250,1300,1250,1200,89,74,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+GHY-S3,Guwahati Demo Community Centre C,Guwahati,26.125,91.75,1300,200,1150,1100,1050,86,70,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+CHE-S1,Chennai Demo Relief Centre A,Chennai,13.04,80.25,2000,350,1700,1650,1600,93,84,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+CHE-S2,Chennai Demo School Shelter B,Chennai,13.09,80.21,1800,300,1550,1500,1450,90,80,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
+CHE-S3,Chennai Demo Community Hall C,Chennai,13.0,80.275,1500,250,1300,1250,1200,88,77,2026-08-31T00:00:00Z,DEMO,Synthetic operational capacities for demonstration only,See docs/multicity_demo_sources.md
