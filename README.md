@@ -24,9 +24,11 @@ The presentation path now includes:
 - cached OSM GraphML routing with labelled haversine fallback;
 - Markdown and PDF action-plan export;
 - custom habitation/shelter CSV validation and template workflow;
-- NDMA SACHET-compatible CAP/RSS alert infrastructure with strict LIVE/CACHED/DEMO handling;
-- optional USGS FDSN earthquake context with LIVE→CACHED behavior;
-- Docker deployment support, tests and GitHub Actions CI.
+- NDMA SACHET-compatible CAP/RSS alert infrastructure with ETag-aware cache support;
+- official IMD district-warning/rainfall context with LIVE→CACHED behavior;
+- official USGS FDSN earthquake context with LIVE→CACHED behavior;
+- dedicated **Live Data Context** page for source status and city-specific external evidence;
+- polished EOC-style frontend, Docker deployment support, tests and GitHub Actions CI.
 
 ## Demo data honesty
 
@@ -53,7 +55,22 @@ py -3.13 -m pytest tests -q
 py -3.13 -m streamlit run app.py
 ```
 
-The demo gate checks all five named hazard profiles plus Combined Multi-Hazard, the three-city dataset, frozen risk classes, local/capacity-safe relocation, batch no-double-booking, global optimizer accounting and both Markdown/PDF export. It should report `"demo_ready": true`.
+The demo gate checks all five named hazard profiles plus Combined Multi-Hazard, the three-city dataset, frozen risk classes, local/capacity-safe relocation, batch no-double-booking, global optimizer accounting, IMD warning-code normalization, all required pages and both Markdown/PDF export. It should report `"demo_ready": true`.
+
+## Probe real APIs before judging
+
+This command is internet-dependent and optional:
+
+```powershell
+py -3.13 scripts/api_probe.py
+```
+
+It checks official IMD warning/rainfall context and USGS earthquake context for Puri, Guwahati and Chennai. It also reports the SACHET feed state. The probe never modifies risk scores or authoritative pilot data.
+
+Expected source modes:
+- `LIVE` — successfully refreshed from a verified source;
+- `CACHED` — last successful response reused;
+- `DEMO` — no verified live/cache response available or synthetic presentation content.
 
 ## Suggested five-minute walkthrough
 
@@ -62,8 +79,9 @@ The demo gate checks all five named hazard profiles plus Combined Multi-Hazard, 
 3. **Risk Analysis** — choose a named hazard and show indicator contributions + final risk contributions.
 4. **Relocation Planner** — safe-shelter ranking, split allocation, deficit and system-wide capacity sharing.
 5. **Scenario Studio** — adjust risk policy weights and show classification impact.
-6. **Command Center** — show CAP/RSS alert infrastructure and optional external context.
-7. **Export** — download the PDF action plan.
+6. **Live Data Context** — refresh IMD + USGS context and explain LIVE/CACHED/DEMO separation.
+7. **Command Center** — show CAP/RSS alert infrastructure.
+8. **Export** — download the PDF action plan.
 
 See `docs/demo_guide.md` and `docs/pre_demo_checklist.md`.
 
@@ -90,13 +108,26 @@ Unknown is distinct from zero. Population allocation never exceeds available cap
 
 ## External feeds
 
+### IMD weather context
+
+`src/imd_context.py` uses official India Meteorological Department endpoints documented by IMD:
+
+- district warnings: `https://mausam.imd.gov.in/api/warnings_district_api.php`
+- district rainfall: `https://mausam.imd.gov.in/api/districtwise_rainfall_api.php`
+
+The adapter filters the response to the selected demo geography and decodes documented warning codes/color levels. IMD data remains contextual until a verified source-specific analytical mapping is approved.
+
 ### NDMA SACHET
 
-The application includes a CAP/RSS-compatible parser and cache behavior. Configure only a verified endpoint/identifier before presenting it as LIVE. The official SACHET integration guidance requires ETag-aware CAP XML caching.
+The application includes a CAP/RSS-compatible parser and ETag-aware cache behavior matching the official SACHET consumer guidance. Configure only a verified endpoint/identifier before presenting it as LIVE.
 
 ### USGS earthquake context
 
 `src/earthquake_context.py` uses the official USGS FDSN Event Web Service for optional earthquake context near the three demo geographies. This feed is contextual and does not silently modify the deterministic risk score.
+
+### Bhuvan GIS
+
+NRSC/ISRO Bhuvan documents OGC WMS/WMTS services including Flood Hazard and Flood Annual Layers. The exact layer identifier, legend/source class, CRS and source-class→0–100 mapping still have to be verified before a Bhuvan layer is allowed to drive risk scoring.
 
 ## Custom data
 
@@ -153,6 +184,7 @@ The strict Odisha/Puri authoritative-data integration continues separately from 
 - Decision support only; authorized officials make evacuation/relocation decisions.
 - Bundled multi-city operational values and hazard footprints are DEMO.
 - Prototype hazard-profile weights are not official standards.
+- External live feeds remain context unless explicitly integrated through a verified source-specific analytical mapping.
 - Experimental coordination zones do not determine evacuation.
 - Global optimization compares only shelter candidates already passing safety/capacity gates.
 - Road conditions and shelter occupancy must be revalidated during emergencies.
