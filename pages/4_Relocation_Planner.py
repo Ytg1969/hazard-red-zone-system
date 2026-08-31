@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from src.batch_relocation import plan_batch_relocation
+from src.global_optimizer import optimize_relocation_flow
 from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
 from src.relocation import allocate_population, rank_shelters
 from src.report_generator import generate_action_plan, generate_action_plan_pdf
@@ -100,6 +101,17 @@ if batch["allocations"]:
 if batch["unallocated"]:
     st.warning("The batch plan reports an explicit deficit rather than reusing or overfilling committed shelter capacity.")
     st.dataframe(pd.DataFrame(batch["unallocated"]), width="stretch", hide_index=True)
+
+with st.expander("Experimental global optimization comparison", expanded=False):
+    st.caption("Network-simplex comparison uses only shelter candidates that already pass the normal safety/capacity gate. It is not an autonomous evacuation decision.")
+    optimized = optimize_relocation_flow(habitations, shelters)
+    o1, o2, o3 = st.columns(3)
+    o1.metric("Required", f"{optimized['required_population']:,}")
+    o2.metric("Globally Allocated", f"{optimized['allocated_population']:,}")
+    o3.metric("Deficit", f"{optimized['remaining_deficit']:,}")
+    if optimized["allocations"]:
+        st.dataframe(pd.DataFrame(optimized["allocations"]), width="stretch", hide_index=True)
+    st.caption(optimized.get("note", ""))
 
 st.markdown("### 5. Draft administrative action plan")
 action_plan = generate_action_plan(habitation=habitation, risk=risk, relocation=recommended, allocation=allocation, data_mode="DEMO")
