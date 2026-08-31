@@ -14,4 +14,9 @@ def test_demo_gate_reports_ready():
         result["sample_allocated_population"] + result["sample_remaining_deficit"]
         == result["sample_required_population"]
     )
+    assert (
+        result["batch_allocated_population"] + result["batch_remaining_deficit"]
+        == result["batch_required_population"]
+    )
     assert result["action_plan_export"] == "PASS"
+    assert result["pdf_action_plan_export"] == "PASS"
