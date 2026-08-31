@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 
 import folium
 import streamlit as st
@@ -24,11 +25,27 @@ ROAD_GRAPH_FILES = {
     "Chennai": Path("data/cache/roads/Chennai_Tamil_Nadu_India.graphml"),
 }
 
+
+def _circle_from_geometry(geometry) -> tuple[float, float, float]:
+    """Convert a demo hazard geometry to an approximate display circle.
+
+    The underlying analytical geometry is untouched; this only changes the map
+    presentation. Radius approximates half the source geometry's bounding-box
+    diagonal so the circular footprint remains visually comparable in extent.
+    """
+    centroid = geometry.centroid
+    minx, miny, maxx, maxy = geometry.bounds
+    lat_span_km = abs(maxy - miny) * 111.0
+    lon_span_km = abs(maxx - minx) * 111.0 * max(0.2, math.cos(math.radians(float(centroid.y))))
+    radius_km = max(0.6, math.hypot(lat_span_km, lon_span_km) / 2.0)
+    return float(centroid.y), float(centroid.x), radius_km * 1000.0
+
+
 st.set_page_config(page_title="Red Zone Map", layout="wide")
 inject_global_css()
 render_page_header(
     "Red Zone Map",
-    "Operational map for red-zone inspection, source GIS context and safe-shelter route planning.",
+    "Operational map for circular red-zone inspection, source GIS context and safe-shelter route planning.",
 )
 render_data_mode_indicator("DEMO")
 city, hazard_profile = render_demo_scope_controls("map")
@@ -51,7 +68,7 @@ with st.sidebar:
         default=["CRITICAL", "HIGH", "MODERATE", "LOW"],
     )
     show_population = st.checkbox("Scale markers by population", value=True)
-    show_hazards = st.checkbox("Show synthetic hazard footprints", value=True)
+    show_hazards = st.checkbox("Show circular red-zone footprints", value=True)
     show_zones = st.checkbox("Show coordination zone in popups", value=True)
     show_route = st.checkbox("Show recommended shelter route", value=True)
 
@@ -106,7 +123,7 @@ map_center = [float(filtered["latitude"].mean()), float(filtered["longitude"].me
 map_obj = folium.Map(
     location=map_center,
     zoom_start=10 if city != "All Demo Cities" else 5,
-    tiles="OpenStreetMap",
+    tiles="CartoDB positron",
     control_scale=True,
 )
 
@@ -129,21 +146,37 @@ if show_hazards:
     if city != "All Demo Cities" and "demo_city" in hazards.columns:
         visible_hazards = hazards[hazards["demo_city"] == city]
 
-    def hazard_style(feature):
-        score = float(feature["properties"].get("hazard_score", 0))
+    for _, zone in visible_hazards.iterrows():
+        score = float(zone.get("hazard_score", 0) or 0)
         color = "#dc3545" if score >= 80 else "#ea8600" if score >= 60 else "#f9ab00" if score >= 40 else "#34a853"
-        return {"fillColor": color, "color": color, "weight": 2, "fillOpacity": 0.16}
-
-    if not visible_hazards.empty:
-        folium.GeoJson(
-            visible_hazards.__geo_interface__,
-            name="Synthetic Demo Hazard Footprints",
-            style_function=hazard_style,
-            tooltip=folium.GeoJsonTooltip(
-                fields=["name", "hazard_type", "hazard_score", "data_mode"],
-                aliases=["Zone", "Hazard", "Score", "Mode"],
-                sticky=False,
-            ),
+        center_lat, center_lon, radius_m = _circle_from_geometry(zone.geometry)
+        tooltip = (
+            f"<b>{zone.get('name', 'Demo hazard zone')}</b><br>"
+            f"Hazard: {zone.get('hazard_type', 'Hazard')}<br>"
+            f"Score: {score:.0f}/100<br>"
+            f"Mode: {zone.get('data_mode', 'DEMO')}<br>"
+            "Circular display footprint"
+        )
+        folium.Circle(
+            location=[center_lat, center_lon],
+            radius=radius_m,
+            color=color,
+            weight=2.2,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.14,
+            opacity=0.88,
+            tooltip=folium.Tooltip(tooltip, sticky=False),
+            name=f"Red Zone — {zone.get('name', 'Hazard')}",
+        ).add_to(map_obj)
+        folium.Circle(
+            location=[center_lat, center_lon],
+            radius=max(250.0, radius_m * 0.72),
+            color=color,
+            weight=1,
+            fill=False,
+            opacity=0.30,
+            interactive=False,
         ).add_to(map_obj)
 
 for row in filtered.to_dict(orient="records"):
@@ -160,11 +193,11 @@ for row in filtered.to_dict(orient="records"):
         radius=radius,
         popup=folium.Popup(popup, max_width=300),
         tooltip=f"{row['name']} — {row['risk_level']}",
-        color=color,
+        color="#ffffff" if row["name"] == selected_name else color,
         fill=True,
         fill_color=color,
-        fill_opacity=0.82,
-        weight=2,
+        fill_opacity=0.92,
+        weight=3 if row["name"] == selected_name else 2,
     ).add_to(map_obj)
 
 recommended = None
@@ -233,8 +266,9 @@ with left:
             "This is source GIS context, not a calibrated risk input."
         )
     st.caption(
-        "City locations are real geographies. Bundled operational values and hazard footprints are DEMO inputs. "
-        "Bhuvan is source GIS context. Road routing follows a cached OSM graph when available; otherwise the dashed line is an explicit planning fallback."
+        "Circular red-zone footprints are a presentation treatment derived from the extent of the bundled DEMO hazard geometries; "
+        "they are not statutory boundaries. City locations are real geographies. Bhuvan is source GIS context. Road routing follows "
+        "a cached OSM graph when available; otherwise the dashed line is an explicit planning fallback."
     )
 
 with right:
