@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","properties":{"name":"Puri coastal cyclone demo zone","demo_city":"Puri","hazard_type":"Cyclone","hazard_score":90,"data_mode":"DEMO","source_context":"Synthetic geometry anchored to real geography; see docs/multicity_demo_sources.md"},"geometry":{"type":"Polygon","coordinates":[[[85.77,19.76],[85.86,19.76],[85.86,19.87],[85.77,19.87],[85.77,19.76]]]}},
+    {"type":"Feature","properties":{"name":"Puri flood demo zone","demo_city":"Puri","hazard_type":"Flood","hazard_score":82,"data_mode":"DEMO","source_context":"Synthetic geometry anchored to real geography; see docs/multicity_demo_sources.md"},"geometry":{"type":"Polygon","coordinates":[[[85.79,19.78],[85.85,19.78],[85.85,19.85],[85.79,19.85],[85.79,19.78]]]}},
+    {"type":"Feature","properties":{"name":"Guwahati flood demo zone","demo_city":"Guwahati","hazard_type":"Flood","hazard_score":88,"data_mode":"DEMO","source_context":"Synthetic geometry anchored to real geography; see docs/multicity_demo_sources.md"},"geometry":{"type":"Polygon","coordinates":[[[91.71,26.15],[91.80,26.15],[91.80,26.20],[91.71,26.20],[91.71,26.15]]]}},
+    {"type":"Feature","properties":{"name":"Guwahati landslide demo zone","demo_city":"Guwahati","hazard_type":"Landslide","hazard_score":86,"data_mode":"DEMO","source_context":"Synthetic geometry anchored to real geography; see docs/multicity_demo_sources.md"},"geometry":{"type":"Polygon","coordinates":[[[91.74,26.11],[91.81,26.11],[91.81,26.17],[91.74,26.17],[91.74,26.11]]]}},
+    {"type":"Feature","properties":{"name":"Chennai cyclone-flood demo zone","demo_city":"Chennai","hazard_type":"Cyclone/Flood","hazard_score":87,"data_mode":"DEMO","source_context":"Synthetic geometry anchored to real geography; see docs/multicity_demo_sources.md"},"geometry":{"type":"Polygon","coordinates":[[[80.18,12.98],[80.30,12.98],[80.30,13.11],[80.18,13.11],[80.18,12.98]]]}},
+    {"type":"Feature","properties":{"name":"Chennai drought stress demo zone","demo_city":"Chennai","hazard_type":"Drought","hazard_score":78,"data_mode":"DEMO","source_context":"Synthetic geometry anchored to real geography; see docs/multicity_demo_sources.md"},"geometry":{"type":"Polygon","coordinates":[[[80.14,13.02],[80.24,13.02],[80.24,13.12],[80.14,13.12],[80.14,13.02]]]}}
+  ]
+}
