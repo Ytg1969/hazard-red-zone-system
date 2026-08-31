@@ -1,6 +1,8 @@
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
+from src.batch_relocation import plan_batch_relocation
 from src.pipeline import (
     enrich_habitations,
     enrich_shelters,
@@ -8,7 +10,7 @@ from src.pipeline import (
     load_demo_hazards,
 )
 from src.relocation import allocate_population, rank_shelters
-from src.report_generator import generate_action_plan
+from src.report_generator import generate_action_plan, generate_action_plan_pdf
 from src.risk_engine import calculate_risk
 from src.ui_theme import (
     inject_global_css,
@@ -56,7 +58,10 @@ with m3:
 m4.metric("Relocation Priority", habitation["relocation_priority"])
 
 if habitation.get("inside_hazard_zone") is True:
-    st.warning("This habitation intersects the active demonstration hazard footprint and should not be matched to a site solely on geographic proximity.")
+    st.warning(
+        "This habitation intersects the active demonstration hazard footprint and should not be "
+        "matched to a site solely on geographic proximity."
+    )
 
 st.markdown("### 2. Compare suitable shelters")
 ranked = rank_shelters(habitation, shelters.to_dict(orient="records"))
@@ -93,6 +98,23 @@ st.dataframe(
     },
 )
 
+visual_left, visual_right = st.columns(2, gap="large")
+with visual_left:
+    capacity_chart = ranked_df.head(6).copy()
+    st.bar_chart(capacity_chart.set_index("shelter_name")["available_capacity"])
+    st.caption("Available capacity across the highest-ranked safe shelter candidates.")
+with visual_right:
+    suitability_chart = ranked_df.head(5)[["shelter_name", "suitability_score"]].copy()
+    fig = px.bar(
+        suitability_chart,
+        x="shelter_name",
+        y="suitability_score",
+        title="Top Shelter Suitability Scores",
+        labels={"shelter_name": "Shelter", "suitability_score": "Suitability / 100"},
+    )
+    fig.update_layout(height=330, margin=dict(l=20, r=20, t=55, b=20))
+    st.plotly_chart(fig, width="stretch")
+
 recommended = ranked[0]
 st.markdown("### 3. Primary recommendation and capacity allocation")
 left, right = st.columns([1, 1.35], gap="large")
@@ -104,7 +126,8 @@ with left:
         st.metric("Estimated Travel Time", f"{recommended['travel_time_min']:.0f} min")
     st.metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
     st.caption(
-        f"Routing mode: {recommended['routing_mode']} | Capacity status: {recommended['capacity_validation_status']}"
+        f"Routing mode: {recommended['routing_mode']} | "
+        f"Capacity status: {recommended['capacity_validation_status']}"
     )
 
 with right:
@@ -127,7 +150,28 @@ with right:
     else:
         st.success("The current ranked shelter set can accommodate the full habitation population.")
 
-st.markdown("### 4. Draft administrative action plan")
+st.markdown("### 4. System-wide priority allocation")
+st.caption(
+    "This batch view shares shelter capacity across all IMMEDIATE and SHORT_TERM habitations, "
+    "so the same beds cannot be double-booked by separate recommendations."
+)
+batch = plan_batch_relocation(habitations, shelters)
+b1, b2, b3 = st.columns(3)
+b1.metric("Priority Population", f"{batch['required_population']:,}")
+b2.metric("Batch Allocated", f"{batch['allocated_population']:,}")
+b3.metric("Batch Deficit", f"{batch['remaining_deficit']:,}")
+if batch["allocations"]:
+    st.dataframe(pd.DataFrame(batch["allocations"]), width="stretch", hide_index=True)
+if batch["unallocated"]:
+    st.warning(
+        "The system-wide plan reports an explicit deficit rather than reusing or overfilling "
+        "already committed shelter capacity."
+    )
+    st.dataframe(pd.DataFrame(batch["unallocated"]), width="stretch", hide_index=True)
+else:
+    st.success("All current IMMEDIATE and SHORT_TERM demonstration populations fit within safe capacity.")
+
+st.markdown("### 5. Draft administrative action plan")
 action_plan = generate_action_plan(
     habitation=habitation,
     risk=risk,
@@ -135,13 +179,30 @@ action_plan = generate_action_plan(
     allocation=allocation,
     data_mode="DEMO",
 )
-st.download_button(
-    "Download Draft Action Plan",
-    data=action_plan,
-    file_name=f"{habitation['habitation_id']}_draft_action_plan.md",
-    mime="text/markdown",
-    width="stretch",
+pdf_plan = generate_action_plan_pdf(
+    habitation=habitation,
+    risk=risk,
+    relocation=recommended,
+    allocation=allocation,
+    data_mode="DEMO",
 )
+export_left, export_right = st.columns(2)
+with export_left:
+    st.download_button(
+        "Download Action Plan (Markdown)",
+        data=action_plan,
+        file_name=f"{habitation['habitation_id']}_draft_action_plan.md",
+        mime="text/markdown",
+        width="stretch",
+    )
+with export_right:
+    st.download_button(
+        "Download Action Plan (PDF)",
+        data=pdf_plan,
+        file_name=f"{habitation['habitation_id']}_draft_action_plan.pdf",
+        mime="application/pdf",
+        width="stretch",
+    )
 with st.expander("Preview action plan"):
     st.markdown(action_plan)
 
