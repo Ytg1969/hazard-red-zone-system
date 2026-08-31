@@ -9,6 +9,7 @@ from src.ui_theme import (
     render_data_mode_indicator,
     render_disclaimer,
     render_page_header,
+    render_source_card,
 )
 
 st.set_page_config(page_title="Live Data Context", page_icon="LIVE", layout="wide")
@@ -24,21 +25,15 @@ st.info(
 )
 
 city = st.selectbox("City context", ["Puri", "Guwahati", "Chennai"], index=0)
-refresh = st.button("Refresh verified external sources", type="primary", use_container_width=True)
+refresh = st.button("Refresh verified external sources", type="primary", width="stretch")
 
 source_left, source_mid, source_right = st.columns(3, gap="large")
 with source_left:
-    st.markdown("### IMD")
-    st.caption("India Meteorological Department · district warnings + rainfall")
-    st.code("mausam.imd.gov.in/api", language=None)
+    render_source_card("India Meteorological Department", "District warnings + rainfall", "Official IMD endpoints with cache-aware LIVE/CACHED handling.")
 with source_mid:
-    st.markdown("### USGS")
-    st.caption("Official FDSN earthquake catalogue · radius query around selected city")
-    st.code("earthquake.usgs.gov/fdsnws/event/1", language=None)
+    render_source_card("USGS FDSN", "Earthquake catalogue", "Official radius/time-window query around the selected demo city.")
 with source_right:
-    st.markdown("### NDMA SACHET")
-    st.caption("CAP/RSS national alert infrastructure · verified feed configuration required")
-    st.code("sachet.ndma.gov.in", language=None)
+    render_source_card("NDMA SACHET", "CAP / RSS alerts", "ETag-aware cache path; verified feed identifier required for LIVE mode.")
 
 st.divider()
 
@@ -50,9 +45,9 @@ if not refresh:
     )
     st.markdown("#### Additional authoritative GIS integration path")
     st.write(
-        "NRSC/ISRO Bhuvan exposes OGC WMS/WMTS services including Flood Hazard and Flood Annual Layers. "
-        "The exact production layer identifier and source-class mapping remain a separate verification gate before "
-        "those layers can affect hazard scoring."
+        "NRSC/ISRO Bhuvan exposes OGC WMS services for Flood Hazard and Flood Annual Layers. "
+        "The service endpoint family is verified, while exact production layer identifiers and source-class mapping "
+        "remain gated before those layers can affect hazard scoring."
     )
     render_disclaimer()
     st.stop()
@@ -147,8 +142,8 @@ st.markdown("### What can become operational next")
 st.markdown(
     """
 - **Weather:** map verified IMD warning/rainfall fields into source-specific hazard rules only after calibration.
-- **Flood / cyclone / landslide GIS:** verify the exact Bhuvan OGC layer identifier, legend/classes and CRS before scoring.
-- **Alerts:** configure the verified SACHET CAP/RSS endpoint and complete ETag-aware cache handling.
+- **Flood / cyclone / landslide GIS:** verify exact Bhuvan layer identifiers, legend/classes and CRS before scoring.
+- **Alerts:** configure the verified SACHET CAP/RSS identifier; ETag revalidation is already implemented.
 - **Roads:** pre-cache local OSMnx graphs for Puri, Guwahati and Chennai so route comparisons remain usable offline.
 """
 )
