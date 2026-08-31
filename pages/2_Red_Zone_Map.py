@@ -28,7 +28,7 @@ st.set_page_config(page_title="Red Zone Map", layout="wide")
 inject_global_css()
 render_page_header(
     "Red Zone Map",
-    "Spatial multi-hazard view with deterministic DEMO risk layers, optional Bhuvan WMS context, and capacity-screened shelter routing.",
+    "Operational map for red-zone inspection, source GIS context and safe-shelter route planning.",
 )
 render_data_mode_indicator("DEMO")
 city, hazard_profile = render_demo_scope_controls("map")
@@ -45,7 +45,11 @@ except Exception as exc:
 
 with st.sidebar:
     st.subheader("Map Filters")
-    risk_levels = st.multiselect("Risk levels", ["CRITICAL", "HIGH", "MODERATE", "LOW"], default=["CRITICAL", "HIGH", "MODERATE", "LOW"])
+    risk_levels = st.multiselect(
+        "Risk levels",
+        ["CRITICAL", "HIGH", "MODERATE", "LOW"],
+        default=["CRITICAL", "HIGH", "MODERATE", "LOW"],
+    )
     show_population = st.checkbox("Scale markers by population", value=True)
     show_hazards = st.checkbox("Show synthetic hazard footprints", value=True)
     show_zones = st.checkbox("Show coordination zone in popups", value=True)
@@ -60,7 +64,7 @@ with st.sidebar:
             labels = [item["label"] for item in bhuvan_options]
             chosen_label = st.selectbox("Bhuvan layer", labels)
             selected_bhuvan = next(item for item in bhuvan_options if item["label"] == chosen_label)
-            st.caption("Context only. This WMS layer does not change the 0–100 risk score.")
+            st.caption("Context only. The source WMS does not change the deterministic risk score.")
     elif city == "All Demo Cities":
         st.caption("Select one city to enable verified Bhuvan overlays.")
 
@@ -70,11 +74,41 @@ if filtered.empty:
     render_disclaimer()
     st.stop()
 
-selected_name = st.selectbox("Inspect habitation", filtered.sort_values("risk_score", ascending=False)["name"].tolist())
+st.markdown("### Operational map workspace")
+control_left, control_right = st.columns([2.1, 1], gap="large")
+with control_left:
+    selected_name = st.selectbox(
+        "Inspect habitation",
+        filtered.sort_values("risk_score", ascending=False)["name"].tolist(),
+    )
+with control_right:
+    st.caption("Active analytical profile")
+    st.markdown(f"**{hazard_profile.title()}** · {city}")
+
 selected = filtered[filtered["name"] == selected_name].iloc[0]
 selected_city = str(selected.get("demo_city") or city)
+local_shelters = shelters
+if selected.get("demo_city") and "demo_city" in shelters.columns:
+    local_shelters = shelters[shelters["demo_city"] == selected["demo_city"]].copy()
+
+summary_cols = st.columns(4)
+summary_cols[0].metric("Risk Score", f"{selected['risk_score']:.1f}/100")
+summary_cols[1].metric("Population", f"{int(selected['population']):,}")
+summary_cols[2].metric("Relocation Priority", selected["relocation_priority"])
+summary_cols[3].metric("Local Safe Shelters", f"{len(rank_shelters(selected.to_dict(), local_shelters))}")
+
+if selected.get("inside_hazard_zone") is True:
+    st.warning("Selected habitation intersects the current demonstration hazard footprint. Shelter selection remains safety- and capacity-gated.")
+elif selected.get("inside_hazard_zone") is False and selected.get("distance_to_hazard_km") is not None:
+    st.info(f"Selected habitation is outside the demo hazard footprint; nearest boundary is approximately {float(selected['distance_to_hazard_km']):.2f} km away.")
+
 map_center = [float(filtered["latitude"].mean()), float(filtered["longitude"].mean())]
-map_obj = folium.Map(location=map_center, zoom_start=10 if city != "All Demo Cities" else 5, tiles="OpenStreetMap", control_scale=True)
+map_obj = folium.Map(
+    location=map_center,
+    zoom_start=10 if city != "All Demo Cities" else 5,
+    tiles="OpenStreetMap",
+    control_scale=True,
+)
 
 if selected_bhuvan is not None:
     folium.WmsTileLayer(
@@ -136,9 +170,6 @@ for row in filtered.to_dict(orient="records"):
 recommended = None
 route = None
 if show_route:
-    local_shelters = shelters
-    if "demo_city" in shelters.columns and selected_city in ROAD_GRAPH_FILES:
-        local_shelters = shelters[shelters["demo_city"] == selected_city]
     ranked = rank_shelters(selected.to_dict(), local_shelters)
     if ranked:
         recommended = ranked[0]
@@ -151,12 +182,26 @@ if show_route:
             graphml_path=graph_path if graph_path and graph_path.exists() else None,
         )
         geometry = route.get("route_geometry") or [list(origin), list(destination)]
+
+        folium.Marker(
+            list(origin),
+            tooltip=f"Origin: {selected['name']}",
+            icon=folium.Icon(color="red", icon="warning-sign"),
+        ).add_to(map_obj)
+
         if route.get("routing_mode") == "cached_osm_graph":
+            folium.PolyLine(
+                geometry,
+                color="#8ab4f8",
+                weight=9,
+                opacity=0.48,
+                name="Recommended Shelter Route Casing",
+            ).add_to(map_obj)
             folium.PolyLine(
                 geometry,
                 color="#1a73e8",
                 weight=5,
-                opacity=0.9,
+                opacity=0.95,
                 tooltip="Cached OpenStreetMap road route to recommended shelter",
                 name="Recommended Shelter Route",
             ).add_to(map_obj)
@@ -170,56 +215,59 @@ if show_route:
                 tooltip="Straight-line planning fallback — no cached road graph available",
                 name="Route Planning Fallback",
             ).add_to(map_obj)
+
         folium.Marker(
             [float(recommended["latitude"]), float(recommended["longitude"])],
-            tooltip=f"Recommended shelter: {recommended['shelter_name']}",
+            tooltip=f"Safe shelter: {recommended['shelter_name']}",
             icon=folium.Icon(color="green", icon="home"),
         ).add_to(map_obj)
 
 folium.LayerControl(collapsed=True).add_to(map_obj)
-left, right = st.columns([2.2, 1], gap="large")
+
+left, right = st.columns([2.15, 1], gap="large")
 with left:
-    st_folium(map_obj, height=620, width=1000, returned_objects=[])
+    st_folium(map_obj, height=650, width=1100, returned_objects=[])
     if selected_bhuvan is not None:
         st.success(
             f"Bhuvan context active: {selected_bhuvan['label']} · layer `{selected_bhuvan['layer']}`. "
-            "This is a source WMS overlay, not a calibrated risk input."
+            "This is source GIS context, not a calibrated risk input."
         )
     st.caption(
-        "City locations are real geographies. Bundled hazard footprints and operational values are synthetic DEMO inputs. "
-        "Bhuvan layers are source GIS context. Road routing uses a cached OSM graph when present and otherwise shows a dashed straight-line fallback."
+        "City locations are real geographies. Bundled operational values and hazard footprints are DEMO inputs. "
+        "Bhuvan is source GIS context. Road routing follows a cached OSM graph when available; otherwise the dashed line is an explicit planning fallback."
     )
+
 with right:
+    st.markdown("### Selected red-zone profile")
     st.subheader(selected["name"])
     render_risk_badge(selected["risk_level"])
-    st.metric("Risk Score", f"{selected['risk_score']:.1f}/100")
     st.metric("Hazard Score", f"{selected['hazard_score']:.1f}/100")
-    st.metric("Population", f"{int(selected['population']):,}")
-    st.metric("Relocation Priority", selected["relocation_priority"])
-    st.metric("Hazard Data Completeness", f"{float(selected.get('hazard_data_completeness',0)):.0f}%")
+    st.metric("Hazard Data Completeness", f"{float(selected.get('hazard_data_completeness', 0)):.0f}%")
     st.write(f"**Primary drivers:** {selected['risk_drivers']}")
     st.write(f"**Coordination zone:** {selected.get('coordination_zone','—')} (experimental grouping only)")
     st.code(f"{selected['latitude']:.5f}, {selected['longitude']:.5f}")
 
+    st.markdown("### Recommended safe evacuation route")
     if recommended and route:
-        st.markdown("#### Recommended shelter route")
         st.success(f"{selected['name']} → {recommended['shelter_name']}")
+        r1, r2 = st.columns(2)
+        r1.metric("Shelter Suitability", f"{recommended['suitability_score']:.1f}/100")
+        r2.metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
         st.write(
-            f"Safety {recommended['safety_score']:.0f}/100 · Available capacity {int(recommended['available_capacity']):,} · "
-            f"Suitability {recommended['suitability_score']:.1f}/100"
+            f"Safety: **{recommended['safety_score']:.0f}/100** · Accessibility: **{recommended['accessibility_score']:.0f}/100**"
         )
-        st.write(f"Route distance: {route['distance_km']:.2f} km")
+        st.write(f"Route distance: **{route['distance_km']:.2f} km**")
         if route.get("travel_time_min") is not None:
-            st.write(f"Estimated travel time: {route['travel_time_min']:.1f} min")
+            st.write(f"Estimated travel time: **{route['travel_time_min']:.1f} min**")
         if route.get("routing_mode") == "cached_osm_graph":
-            st.info("Road-network route active from a locally cached OpenStreetMap GraphML file.")
+            st.info("Road-routed navigation is active using the locally cached OpenStreetMap GraphML file.")
         else:
-            st.warning("Straight-line route fallback. Cache the city road graph before the demo for road-network routing.")
-    elif show_route:
-        st.warning("No shelter passed the current safety and available-capacity gates for this habitation.")
+            st.warning("Straight-line planning fallback is active. Cache this city's road graph before the demo for road-network routing.")
+    else:
+        st.warning("No shelter currently passes the safety and available-capacity gates for the selected habitation.")
 
     if selected_bhuvan is not None:
-        st.markdown("#### Bhuvan layer provenance")
+        st.markdown("### Bhuvan provenance")
         st.write(f"**Layer:** `{selected_bhuvan['layer']}`")
         st.write(f"**Reference:** {selected_bhuvan['reference']}")
         st.caption("Historical/contextual source layer. No direct contribution to the deterministic risk score.")
