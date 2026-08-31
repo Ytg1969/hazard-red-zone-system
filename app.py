@@ -9,6 +9,7 @@ from src.ui_theme import (
     render_kpi_strip,
     render_page_header,
     render_risk_badge,
+    render_source_card,
 )
 
 st.set_page_config(page_title="Multi-Hazard Decision Support System", page_icon="MH", layout="wide", initial_sidebar_state="expanded")
@@ -71,7 +72,7 @@ with right:
         2. **Review Red Zones** — identify the most exposed locations on the map.
         3. **Inspect Risk Drivers** — verify the weighted contribution behind every score.
         4. **Plan Relocation** — compare safe shelters, limiting capacity and route distance.
-        5. **Test Scenarios** — adjust policy weights and compare impact.
+        5. **Refresh Live Context** — inspect verified IMD/USGS/NDMA source status without changing the offline score.
         6. **Export Action Plan** — Markdown/PDF decision-support output.
         """
     )
@@ -80,14 +81,25 @@ with right:
     st.info("Puri, Guwahati and Chennai are representative high-risk contexts, not a definitive national ranking. See docs/multicity_demo_sources.md for source context and honesty rules.")
 
 st.divider()
+st.subheader("Data & Decision Layers")
+source_cols = st.columns(3, gap="large")
+with source_cols[0]:
+    render_source_card("Deterministic analysis", "Offline-ready", "Risk, capacity, relocation and exports do not require internet access.")
+with source_cols[1]:
+    render_source_card("Verified external context", "IMD · USGS · NDMA", "LIVE/CACHED sources are isolated from scoring until source-specific mappings are approved.")
+with source_cols[2]:
+    render_source_card("GIS integration path", "Bhuvan OGC", "Flood-hazard service family verified; exact layer/class mapping remains gated.")
+
+st.divider()
 st.subheader("Operational Modules")
-modules = st.columns(5)
+modules = st.columns(6)
 module_text = [
-    ("Command Center", "Monitor risk, population exposure, alerts and shelter capacity."),
-    ("Red Zone Map", "View multi-city risk, hazard footprints and coordination zones."),
+    ("Command Center", "Monitor risk, exposure, alerts and shelter capacity."),
+    ("Red Zone Map", "View risk, hazard footprints and coordination zones."),
     ("Risk Analysis", "Inspect hazard-profile and final-risk contributions."),
     ("Relocation Planner", "Compare capacity-aware local shelter recommendations."),
     ("Scenario Studio", "Adjust risk weights and measure policy impact."),
+    ("Live Data Context", "Refresh IMD/USGS/NDMA evidence with source-mode badges."),
 ]
 for col, (name, description) in zip(modules, module_text):
     with col:
