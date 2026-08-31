@@ -116,7 +116,20 @@ elif selected.get("inside_hazard_zone") is False and selected.get("distance_to_h
     st.info(f"Selected habitation is outside the DEMO analytical hazard footprint; nearest boundary is approximately {float(selected['distance_to_hazard_km']):.2f} km away.")
 
 map_center = [float(filtered["latitude"].mean()), float(filtered["longitude"].mean())]
-map_obj = folium.Map(location=map_center, zoom_start=11 if city != "All Demo Cities" else 5, tiles="CartoDB positron", control_scale=True)
+map_obj = folium.Map(
+    location=map_center,
+    zoom_start=11 if city != "All Demo Cities" else 5,
+    tiles=None,
+    control_scale=True,
+)
+folium.TileLayer(
+    tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attr="© OpenStreetMap contributors",
+    name="OpenStreetMap",
+    overlay=False,
+    control=False,
+    max_zoom=19,
+).add_to(map_obj)
 
 if selected_bhuvan is not None:
     folium.WmsTileLayer(
@@ -158,7 +171,6 @@ for row in filtered.to_dict(orient="records"):
         fill_color=color, fill_opacity=0.96, weight=4 if row["name"] == selected_name else 2,
     ).add_to(map_obj)
 
-# Show every candidate shelter so the map reflects the actual demo inventory (3 per city).
 if show_shelters:
     for i, shelter in enumerate(ranked_shelters):
         is_route_target = shelter["shelter_name"] == selected_shelter_name
@@ -207,7 +219,8 @@ with left:
     if selected_bhuvan is not None:
         st.success(f"Bhuvan context active: {selected_bhuvan['label']} · layer `{selected_bhuvan['layer']}`. This is source GIS context, not a calibrated risk input.")
     st.caption(
-        "Each demo city contains three shelter records. The map now displays all safety/capacity-qualified candidates and lets the operator choose which candidate to route to. HIGH/CRITICAL circles are DEMO decision-visualization areas, not statutory hazard boundaries."
+        "Basemap uses the public OpenStreetMap tile service and requires no API key. Each demo city contains three shelter records. "
+        "The map displays all safety/capacity-qualified candidates and lets the operator choose which candidate to route to."
     )
 
 with right:
