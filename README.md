@@ -21,11 +21,14 @@ The core demo includes:
 - limiting-resource carrying capacity with VALIDATED / PARTIAL / UNVALIDATED status;
 - multi-criteria shelter ranking;
 - capacity-safe multi-shelter population allocation;
+- system-wide priority allocation that prevents shelter capacity from being double-booked across multiple habitations;
 - cached OSM GraphML routing support with a clearly labelled haversine fallback;
 - Command Center, Red Zone Map, Risk Analysis, Relocation Planner, Scenario Studio and Methodology pages;
-- draft action-plan export;
+- Markdown and PDF draft action-plan export;
+- optional CAP/RSS external-alert panel with strict LIVE / CACHED / DEMO labeling;
 - LIVE / CACHED / DEMO data-mode infrastructure;
-- automated tests and GitHub Actions CI.
+- automated tests and GitHub Actions CI;
+- reproducible Docker deployment support.
 
 ## Demo now
 
@@ -41,22 +44,24 @@ py -3.13 -m pytest tests -q
 py -3.13 -m streamlit run app.py
 ```
 
-`demo_gate.py` validates the deterministic offline path, including risk scoring, shelter capacity, safe-shelter recommendation, multi-shelter allocation accounting and draft action-plan generation. It should report `"demo_ready": true` before the presentation.
+`demo_gate.py` validates the deterministic offline path, including risk scoring, shelter capacity, safe-shelter recommendation, single-habitation allocation, system-wide capacity accounting, and both Markdown/PDF action-plan generation. It should report `"demo_ready": true` before the presentation.
 
 Recommended 3-minute flow:
 
 1. **Operational Overview** — show EOC KPIs and the highest-risk habitation.
 2. **Red Zone Map** — show spatial red-zone identification.
 3. **Risk Analysis** — explain the factor contributions behind the score.
-4. **Relocation Planner** — show safe-shelter filtering, capacity-aware allocation and routing mode.
+4. **Relocation Planner** — show safe-shelter filtering, capacity-aware allocation, system-wide no-double-booking plan and routing mode.
 5. **Scenario Studio** — optionally adjust weights and show classification sensitivity.
-6. **Draft Action Plan** — export the administrative decision-support output.
+6. **Draft Action Plan** — export the administrative decision-support output as Markdown or PDF.
 
 ## Data honesty
 
 Bundled hazard polygons, habitation records and shelter records are demonstration data unless explicitly replaced by an authoritative source. The UI must never present `DEMO` or `CACHED` data as `LIVE`.
 
 Synthetic data is used to test the system pipeline and UI. It must not be used to claim scientific model accuracy or real-world hazard validation.
+
+The optional alert panel is isolated from risk scoring. It becomes `LIVE` only when a verified external CAP/RSS endpoint is explicitly configured. Otherwise it stays `DEMO` or uses a labelled cache.
 
 ## Risk model
 
@@ -86,6 +91,8 @@ Capacity status:
 - `VALIDATED` — all defined resource constraints are available;
 - `PARTIAL` — only some resource constraints are available;
 - `UNVALIDATED` — total physical capacity is being used as fallback.
+
+The batch relocation planner reuses this same capacity calculation after every assignment, so one shelter's remaining capacity is shared across all priority habitations instead of being independently reused.
 
 ## Install
 
@@ -118,6 +125,15 @@ streamlit run app.py
 ```bash
 python -m pytest tests
 ```
+
+## Docker
+
+```bash
+docker build -t hazard-red-zone .
+docker run --rm -p 8501:8501 hazard-red-zone
+```
+
+See `DEPLOYMENT.md` for local, Docker, routing-cache and optional alert-feed setup.
 
 ## Generate a larger synthetic demo dataset
 
@@ -152,8 +168,9 @@ Current authoritative-pilot development continues separately on `feature/odisha-
 - This is a decision-support prototype, not an autonomous evacuation-order system.
 - Current bundled hazard polygons are synthetic demonstration layers.
 - Road conditions and shelter occupancy must be revalidated during real emergencies.
-- Live IMD / NDMA / CWC integrations require verified source access and source-specific adapters.
+- External alert feeds require a verified official endpoint before they may be labelled LIVE.
+- Live IMD / NDMA / CWC analytical integrations require verified source access and source-specific adapters.
 - Optional ML validation should only be added when credible historical labels and leakage-safe validation are available.
 - Raw InSAR processing is outside the seven-day core; preprocessed deformation layers can be integrated later.
 
-See `docs/team_plan.md`, `docs/data_dictionary.md`, `docs/architecture.md`, `docs/data_sources.md`, `docs/risk_methodology.md`, and `docs/demo_script.md` before changing shared interfaces.
+See `docs/team_plan.md`, `docs/data_dictionary.md`, `docs/architecture.md`, `docs/data_sources.md`, `docs/risk_methodology.md`, `docs/demo_script.md`, and `docs/jury_faq.md` before changing shared interfaces.

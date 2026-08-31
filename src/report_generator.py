@@ -1,4 +1,12 @@
 from datetime import datetime, timezone
+from io import BytesIO
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 def generate_action_plan(
@@ -76,3 +84,144 @@ def generate_action_plan(
         ]
     )
     return "\n".join(lines)
+
+
+def generate_action_plan_pdf(
+    habitation: dict,
+    risk: dict,
+    relocation: dict | None,
+    allocation: dict | None = None,
+    data_mode: str = "DEMO",
+) -> bytes:
+    """Generate the same decision-support content as a compact PDF export."""
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18 * mm,
+        leftMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ActionPlanTitle",
+        parent=styles["Title"],
+        alignment=TA_CENTER,
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#163A5F"),
+    )
+    heading_style = ParagraphStyle(
+        "ActionPlanHeading",
+        parent=styles["Heading2"],
+        spaceBefore=10,
+        spaceAfter=6,
+        textColor=colors.HexColor("#163A5F"),
+    )
+    body_style = ParagraphStyle(
+        "ActionPlanBody",
+        parent=styles["BodyText"],
+        leading=14,
+        spaceAfter=5,
+    )
+    disclaimer_style = ParagraphStyle(
+        "ActionPlanDisclaimer",
+        parent=body_style,
+        fontSize=8,
+        leading=10,
+        textColor=colors.grey,
+    )
+
+    generated_at = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    story = [
+        Paragraph("DRAFT DISASTER RESPONSE ACTION PLAN", title_style),
+        Spacer(1, 4 * mm),
+        Paragraph(f"Generated: {generated_at} | Data mode: {str(data_mode).upper()}", body_style),
+    ]
+
+    summary_rows = [
+        ["Habitation", str(habitation.get("name", "Unknown"))],
+        ["Habitation ID", str(habitation.get("habitation_id", "-"))],
+        ["Population", str(habitation.get("population", "-"))],
+        ["Risk score", f"{risk.get('risk_score', '-')} / 100"],
+        ["Risk level", str(risk.get("risk_level", "-"))],
+        ["Relocation priority", str(habitation.get("relocation_priority", "-"))],
+        ["Primary drivers", ", ".join(risk.get("drivers", [])) or "-"],
+    ]
+    summary = Table(summary_rows, colWidths=[52 * mm, 118 * mm])
+    summary.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EAF2F8")),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.extend([Spacer(1, 4 * mm), summary])
+
+    story.append(Paragraph("Primary Relocation Recommendation", heading_style))
+    if relocation:
+        story.extend(
+            [
+                Paragraph(f"Recommended shelter: <b>{relocation.get('shelter_name', '-')}</b>", body_style),
+                Paragraph(
+                    f"Distance: {relocation.get('distance_km', '-')} km | "
+                    f"Travel time: {relocation.get('travel_time_min') or 'fallback routing only'} | "
+                    f"Routing mode: {relocation.get('routing_mode', '-')}",
+                    body_style,
+                ),
+                Paragraph(
+                    f"Available capacity: {relocation.get('available_capacity', '-')} | "
+                    f"Capacity status: {relocation.get('capacity_validation_status', '-')} | "
+                    f"Suitability: {relocation.get('suitability_score', '-')} / 100",
+                    body_style,
+                ),
+            ]
+        )
+    else:
+        story.append(Paragraph("No valid safe shelter candidate is currently available.", body_style))
+
+    if allocation is not None:
+        story.append(Paragraph("Capacity Allocation", heading_style))
+        story.append(
+            Paragraph(
+                f"Required population: {allocation.get('required_population', '-')} | "
+                f"Allocated: {allocation.get('allocated_population', '-')} | "
+                f"Remaining deficit: {allocation.get('remaining_deficit', '-')}",
+                body_style,
+            )
+        )
+        for item in allocation.get("allocations", []):
+            story.append(
+                Paragraph(
+                    f"• {item.get('shelter_name', 'Shelter')}: assign "
+                    f"{item.get('assigned_population', '-')} people "
+                    f"({item.get('distance_km', '-')} km; suitability "
+                    f"{item.get('suitability_score', '-')} / 100)",
+                    body_style,
+                )
+            )
+
+    story.extend(
+        [
+            Paragraph("Operational Notes", heading_style),
+            Paragraph("• Confirm current road conditions before dispatch.", body_style),
+            Paragraph("• Revalidate shelter occupancy and essential-resource capacity before movement.", body_style),
+            Paragraph("• Prioritize vulnerable groups according to local disaster-management protocols.", body_style),
+            Spacer(1, 4 * mm),
+            Paragraph(
+                "Decision-support prototype only. Final evacuation, relocation and emergency decisions remain with authorized government authorities.",
+                disclaimer_style,
+            ),
+        ]
+    )
+
+    document.build(story)
+    return buffer.getvalue()

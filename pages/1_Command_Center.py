@@ -1,6 +1,8 @@
+import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.live_alerts import fetch_disaster_alerts
 from src.pipeline import (
     calculate_summary,
     enrich_habitations,
@@ -39,7 +41,9 @@ except Exception:
 
 with st.sidebar:
     st.subheader("Filters")
-    district_options = ["All"] + sorted(habitations["district_code"].dropna().astype(str).unique().tolist())
+    district_options = ["All"] + sorted(
+        habitations["district_code"].dropna().astype(str).unique().tolist()
+    )
     district = st.selectbox("District", district_options)
     risk_options = ["All", "CRITICAL", "HIGH", "MODERATE", "LOW"]
     risk_filter = st.selectbox("Risk level", risk_options)
@@ -57,12 +61,18 @@ render_kpi_strip(
         ("Critical", f"{summary['critical_red_zones']:,}", None),
         ("Population at Risk", f"{summary['population_at_risk']:,}", None),
         ("Immediate Relocation", f"{summary['immediate_relocation_population']:,}", None),
-        ("Shelter Capacity", f"{int(summary['available_shelter_capacity']):,}", "Available across all demo shelters"),
+        (
+            "Shelter Capacity",
+            f"{int(summary['available_shelter_capacity']):,}",
+            "Available across all demo shelters",
+        ),
     ]
 )
 
 st.divider()
-tab1, tab2, tab3 = st.tabs(["Risk Overview", "Habitation Data", "Shelter Capacity"])
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["Risk Overview", "Habitation Data", "Shelter Capacity", "External Alerts"]
+)
 
 with tab1:
     left, right = st.columns(2, gap="large")
@@ -135,6 +145,36 @@ with tab3:
         ].sort_values("available_capacity", ascending=False),
         width="stretch",
         hide_index=True,
+    )
+
+with tab4:
+    st.subheader("Optional CAP / RSS warning feed")
+    st.caption(
+        "The alert connector is isolated from the analytical pipeline. It is labelled LIVE only when "
+        "a verified feed URL is configured; otherwise this panel uses DEMO fallback content."
+    )
+    alert_result = fetch_disaster_alerts()
+    render_data_mode_indicator(alert_result["mode"])
+    st.caption(f"Source: {alert_result['source']} | Retrieved: {alert_result['fetched_at']}")
+    if alert_result.get("stale"):
+        st.warning("The displayed alert feed is cached because the configured source could not be refreshed.")
+    if alert_result.get("error"):
+        st.warning("Configured alert source was unavailable; demonstration alerts are shown instead.")
+
+    alerts = pd.DataFrame(alert_result.get("alerts", []))
+    if alerts.empty:
+        st.info("No alerts were returned by the configured feed.")
+    else:
+        display_columns = [
+            column
+            for column in ["event", "severity", "urgency", "area", "headline", "published"]
+            if column in alerts.columns
+        ]
+        st.dataframe(alerts[display_columns], width="stretch", hide_index=True)
+
+    st.info(
+        "To enable a verified feed later, set SIH_SACHET_FEED_URL to the confirmed public CAP/RSS "
+        "endpoint. Do not label an unverified URL as a live government source."
     )
 
 render_disclaimer()

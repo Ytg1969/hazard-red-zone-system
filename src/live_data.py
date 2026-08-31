@@ -97,3 +97,34 @@ def fetch_json_with_cache(
         if cache_path.exists():
             return load_cached_envelope(cache_path, stale=True)
         raise
+
+
+def fetch_text_with_cache(
+    *,
+    source: str,
+    url: str,
+    cache_path: str | Path,
+    headers: dict[str, str] | None = None,
+    timeout: float = 10.0,
+) -> DataEnvelope:
+    """Fetch a UTF-8 text/XML endpoint with the same LIVE/CACHED semantics."""
+    cache_path = Path(cache_path)
+    request = Request(url, headers=headers or {"User-Agent": "SIH26191/1.0"})
+
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = response.read().decode("utf-8")
+        envelope = DataEnvelope(
+            source=source,
+            mode="LIVE",
+            fetched_at=utc_now_iso(),
+            payload=payload,
+            stale=False,
+            source_url=url,
+        )
+        save_envelope(envelope, cache_path)
+        return envelope
+    except Exception:
+        if cache_path.exists():
+            return load_cached_envelope(cache_path, stale=True)
+        raise
