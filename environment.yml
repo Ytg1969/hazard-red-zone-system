@@ -15,6 +15,7 @@ dependencies:
   - networkx
   - osmnx
   - reportlab
+  - certifi
   - pytest
   - pip
   - pip:

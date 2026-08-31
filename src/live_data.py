@@ -4,9 +4,12 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import ssl
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+import certifi
 
 
 VALID_MODES = {"LIVE", "CACHED", "DEMO"}
@@ -32,6 +35,15 @@ def validate_mode(mode: str) -> str:
     if mode not in VALID_MODES:
         raise ValueError("data mode must be LIVE, CACHED, or DEMO")
     return mode
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Use certifi's maintained CA bundle for consistent HTTPS verification.
+
+    This keeps certificate verification enabled while avoiding Windows/Python
+    installations whose local trust store is incomplete for some public APIs.
+    """
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def demo_envelope(source: str, payload: Any) -> DataEnvelope:
@@ -84,8 +96,9 @@ def fetch_json_with_cache(
     request = Request(url, headers=headers or {"User-Agent": "SIH26191/1.0"})
 
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout, context=_ssl_context()) as response:
             payload = json.loads(response.read().decode("utf-8"))
+            etag = response.headers.get("ETag")
         envelope = DataEnvelope(
             source=source,
             mode="LIVE",
@@ -93,7 +106,7 @@ def fetch_json_with_cache(
             payload=payload,
             stale=False,
             source_url=url,
-            etag=response.headers.get("ETag"),
+            etag=etag,
         )
         save_envelope(envelope, cache_path)
         return envelope
@@ -116,8 +129,9 @@ def fetch_text_with_cache(
     request = Request(url, headers=headers or {"User-Agent": "SIH26191/1.0"})
 
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout, context=_ssl_context()) as response:
             payload = response.read().decode("utf-8")
+            etag = response.headers.get("ETag")
         envelope = DataEnvelope(
             source=source,
             mode="LIVE",
@@ -125,7 +139,7 @@ def fetch_text_with_cache(
             payload=payload,
             stale=False,
             source_url=url,
-            etag=response.headers.get("ETag"),
+            etag=etag,
         )
         save_envelope(envelope, cache_path)
         return envelope
@@ -166,7 +180,7 @@ def fetch_text_with_etag_cache(
 
     request = Request(url, headers=request_headers)
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout, context=_ssl_context()) as response:
             payload = response.read().decode("utf-8")
             envelope = DataEnvelope(
                 source=source,
