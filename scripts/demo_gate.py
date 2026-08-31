@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from src.batch_relocation import plan_batch_relocation  # noqa: E402
 from src.global_optimizer import optimize_relocation_flow  # noqa: E402
 from src.hazard_model import SUPPORTED_HAZARDS, compute_hazard_components  # noqa: E402
+from src.imd_context import normalize_warning_record  # noqa: E402
 from src.pipeline import (  # noqa: E402
     DEMO_CITIES,
     calculate_summary,
@@ -32,6 +33,7 @@ REQUIRED_PAGES = [
     ROOT / "pages/4_Relocation_Planner.py",
     ROOT / "pages/5_Scenario_Studio.py",
     ROOT / "pages/6_Methodology.py",
+    ROOT / "pages/7_Live_Data_Context.py",
 ]
 
 
@@ -39,6 +41,14 @@ def run_demo_gate() -> dict:
     missing_pages = [str(path) for path in REQUIRED_PAGES if not path.exists()]
     if missing_pages:
         raise RuntimeError(f"required Streamlit pages are missing: {missing_pages}")
+
+    # Offline parser smoke for the official IMD warning contract. No network is
+    # required by the presentation gate.
+    parsed_warning = normalize_warning_record(
+        {"District": "Puri", "Day_1": "2,4", "Day1_Color": "2"}
+    )
+    if parsed_warning["day_1_level"] != "ORANGE" or "Heavy Rain" not in str(parsed_warning["day_1_warnings"]):
+        raise RuntimeError("IMD warning normalization smoke test failed")
 
     habitations_raw, shelters_raw = load_demo_data()
     if not set(DEMO_CITIES).issubset(set(habitations_raw["demo_city"])):
@@ -133,6 +143,7 @@ def run_demo_gate() -> dict:
         "batch_allocated_population": int(batch["allocated_population"]),
         "batch_remaining_deficit": int(batch["remaining_deficit"]),
         "global_optimizer": "PASS",
+        "imd_warning_parser": "PASS",
         "action_plan_export": "PASS",
         "pdf_action_plan_export": "PASS",
         "required_pages": [str(path.relative_to(ROOT)) for path in REQUIRED_PAGES],
