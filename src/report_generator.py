@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from html import escape
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -7,6 +8,10 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+def _safe(value) -> str:
+    return escape(str(value if value is not None else "-"))
 
 
 def generate_action_plan(
@@ -93,7 +98,7 @@ def generate_action_plan_pdf(
     allocation: dict | None = None,
     data_mode: str = "DEMO",
 ) -> bytes:
-    """Generate the same decision-support content as a compact PDF export."""
+    """Generate a compact, browser-downloadable PDF action plan."""
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer,
@@ -137,7 +142,7 @@ def generate_action_plan_pdf(
     story = [
         Paragraph("DRAFT DISASTER RESPONSE ACTION PLAN", title_style),
         Spacer(1, 4 * mm),
-        Paragraph(f"Generated: {generated_at} | Data mode: {str(data_mode).upper()}", body_style),
+        Paragraph(f"Generated: {_safe(generated_at)} | Data mode: {_safe(str(data_mode).upper())}", body_style),
     ]
 
     summary_rows = [
@@ -170,17 +175,17 @@ def generate_action_plan_pdf(
     if relocation:
         story.extend(
             [
-                Paragraph(f"Recommended shelter: <b>{relocation.get('shelter_name', '-')}</b>", body_style),
+                Paragraph(f"Recommended shelter: <b>{_safe(relocation.get('shelter_name', '-'))}</b>", body_style),
                 Paragraph(
-                    f"Distance: {relocation.get('distance_km', '-')} km | "
-                    f"Travel time: {relocation.get('travel_time_min') or 'fallback routing only'} | "
-                    f"Routing mode: {relocation.get('routing_mode', '-')}",
+                    f"Distance: {_safe(relocation.get('distance_km', '-'))} km | "
+                    f"Travel time: {_safe(relocation.get('travel_time_min') or 'fallback routing only')} | "
+                    f"Routing mode: {_safe(relocation.get('routing_mode', '-'))}",
                     body_style,
                 ),
                 Paragraph(
-                    f"Available capacity: {relocation.get('available_capacity', '-')} | "
-                    f"Capacity status: {relocation.get('capacity_validation_status', '-')} | "
-                    f"Suitability: {relocation.get('suitability_score', '-')} / 100",
+                    f"Available capacity: {_safe(relocation.get('available_capacity', '-'))} | "
+                    f"Capacity status: {_safe(relocation.get('capacity_validation_status', '-'))} | "
+                    f"Suitability: {_safe(relocation.get('suitability_score', '-'))} / 100",
                     body_style,
                 ),
             ]
@@ -192,19 +197,19 @@ def generate_action_plan_pdf(
         story.append(Paragraph("Capacity Allocation", heading_style))
         story.append(
             Paragraph(
-                f"Required population: {allocation.get('required_population', '-')} | "
-                f"Allocated: {allocation.get('allocated_population', '-')} | "
-                f"Remaining deficit: {allocation.get('remaining_deficit', '-')}",
+                f"Required population: {_safe(allocation.get('required_population', '-'))} | "
+                f"Allocated: {_safe(allocation.get('allocated_population', '-'))} | "
+                f"Remaining deficit: {_safe(allocation.get('remaining_deficit', '-'))}",
                 body_style,
             )
         )
         for item in allocation.get("allocations", []):
             story.append(
                 Paragraph(
-                    f"• {item.get('shelter_name', 'Shelter')}: assign "
-                    f"{item.get('assigned_population', '-')} people "
-                    f"({item.get('distance_km', '-')} km; suitability "
-                    f"{item.get('suitability_score', '-')} / 100)",
+                    f"- {_safe(item.get('shelter_name', 'Shelter'))}: assign "
+                    f"{_safe(item.get('assigned_population', '-'))} people "
+                    f"({_safe(item.get('distance_km', '-'))} km; suitability "
+                    f"{_safe(item.get('suitability_score', '-'))} / 100)",
                     body_style,
                 )
             )
@@ -212,9 +217,9 @@ def generate_action_plan_pdf(
     story.extend(
         [
             Paragraph("Operational Notes", heading_style),
-            Paragraph("• Confirm current road conditions before dispatch.", body_style),
-            Paragraph("• Revalidate shelter occupancy and essential-resource capacity before movement.", body_style),
-            Paragraph("• Prioritize vulnerable groups according to local disaster-management protocols.", body_style),
+            Paragraph("- Confirm current road conditions before dispatch.", body_style),
+            Paragraph("- Revalidate shelter occupancy and essential-resource capacity before movement.", body_style),
+            Paragraph("- Prioritize vulnerable groups according to local disaster-management protocols.", body_style),
             Spacer(1, 4 * mm),
             Paragraph(
                 "Decision-support prototype only. Final evacuation, relocation and emergency decisions remain with authorized government authorities.",
@@ -224,4 +229,8 @@ def generate_action_plan_pdf(
     )
 
     document.build(story)
-    return buffer.getvalue()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise ValueError("ReportLab did not produce a valid PDF payload")
+    return pdf_bytes

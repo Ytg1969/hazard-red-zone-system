@@ -114,13 +114,59 @@ with st.expander("Experimental global optimization comparison", expanded=False):
     st.caption(optimized.get("note", ""))
 
 st.markdown("### 5. Draft administrative action plan")
-action_plan = generate_action_plan(habitation=habitation, risk=risk, relocation=recommended, allocation=allocation, data_mode="DEMO")
-pdf_plan = generate_action_plan_pdf(habitation=habitation, risk=risk, relocation=recommended, allocation=allocation, data_mode="DEMO")
+action_plan = generate_action_plan(
+    habitation=habitation,
+    risk=risk,
+    relocation=recommended,
+    allocation=allocation,
+    data_mode="DEMO",
+)
+
+pdf_plan = None
+pdf_error = None
+try:
+    generated_pdf = generate_action_plan_pdf(
+        habitation=habitation,
+        risk=risk,
+        relocation=recommended,
+        allocation=allocation,
+        data_mode="DEMO",
+    )
+    if not isinstance(generated_pdf, (bytes, bytearray)):
+        raise TypeError("PDF generator did not return binary data")
+    pdf_plan = bytes(generated_pdf)
+    if len(pdf_plan) < 100 or not pdf_plan.startswith(b"%PDF"):
+        raise ValueError("Generated file is not a valid PDF payload")
+except Exception as exc:
+    pdf_error = str(exc)
+
 export_left, export_right = st.columns(2)
 with export_left:
-    st.download_button("Download Action Plan (Markdown)", action_plan, f"{habitation['habitation_id']}_draft_action_plan.md", "text/markdown", width="stretch")
+    st.download_button(
+        "Download Action Plan (Markdown)",
+        data=action_plan.encode("utf-8"),
+        file_name=f"{habitation['habitation_id']}_draft_action_plan.md",
+        mime="text/markdown; charset=utf-8",
+        width="stretch",
+        key=f"markdown_download_{habitation['habitation_id']}",
+    )
 with export_right:
-    st.download_button("Download Action Plan (PDF)", pdf_plan, f"{habitation['habitation_id']}_draft_action_plan.pdf", "application/pdf", width="stretch")
+    if pdf_plan is not None:
+        st.download_button(
+            "Download Action Plan (PDF)",
+            data=pdf_plan,
+            file_name=f"{habitation['habitation_id']}_draft_action_plan.pdf",
+            mime="application/pdf",
+            width="stretch",
+            key=f"pdf_download_{habitation['habitation_id']}",
+        )
+        st.caption(f"PDF ready · {len(pdf_plan) / 1024:.1f} KB")
+    else:
+        st.error("PDF export could not be generated on this machine.")
+        if pdf_error:
+            st.caption(pdf_error)
+        st.caption("Run `py -3.13 -m pip install reportlab` and reload the page if ReportLab is missing.")
+
 with st.expander("Preview action plan"):
     st.markdown(action_plan)
 render_disclaimer()

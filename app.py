@@ -45,11 +45,11 @@ render_kpi_strip([
 ])
 
 st.divider()
-left, right = st.columns([1.35, 1], gap="large")
+left, right = st.columns([1.45, 1], gap="large")
 with left:
     st.subheader("Current Risk Situation")
     top = habitations.sort_values("risk_score", ascending=False).iloc[0]
-    c1, c2 = st.columns([2, 1])
+    c1, c2 = st.columns([2.4, 1])
     with c1:
         st.markdown(f"### {top['name']}")
         st.caption(f"Highest current demonstration risk score: {top['risk_score']:.1f}/100")
@@ -58,6 +58,7 @@ with left:
         st.caption(f"Coordination grouping: {top.get('coordination_zone', '—')} · Hazard data completeness: {float(top.get('hazard_data_completeness', 0)):.0f}%")
     with c2:
         render_risk_badge(top["risk_level"])
+        st.metric("Risk", f"{top['risk_score']:.1f}")
 
     st.markdown("#### Highest-risk habitations")
     display_cols = ["name", "demo_city", "population", "risk_score", "risk_level", "relocation_priority", "coordination_zone"]
@@ -65,44 +66,53 @@ with left:
     st.dataframe(habitations[display_cols].sort_values("risk_score", ascending=False).head(10), width="stretch", hide_index=True)
 
 with right:
-    st.subheader("Priority Actions")
+    st.subheader("Operator Next Actions")
+    st.info("Use this sequence during a live briefing. Each module preserves the same city and hazard logic, while live sources remain analytically isolated unless explicitly calibrated.")
     st.markdown(
         """
-        1. **Choose hazard profile** — Flood, Cyclone, Landslide, Earthquake, Drought or Combined.
-        2. **Review Red Zones** — identify the most exposed locations on the map.
-        3. **Inspect Risk Drivers** — verify the weighted contribution behind every score.
-        4. **Plan Relocation** — compare safe shelters, limiting capacity and route distance.
-        5. **Refresh Live Context** — inspect verified IMD/USGS/NDMA source status without changing the offline score.
-        6. **Export Action Plan** — Markdown/PDF decision-support output.
+        **01 — Scope the incident**  
+        Choose the geography and active hazard profile.
+
+        **02 — Verify the red zones**  
+        Open the map, compare synthetic footprints with source GIS context, and inspect the highest-risk habitation.
+
+        **03 — Explain the score**  
+        Review hazard, exposure, vulnerability and evacuation-difficulty contributions.
+
+        **04 — Plan movement**  
+        Filter unsafe/full shelters, allocate capacity, inspect the route and preserve any deficit.
+
+        **05 — Export the brief**  
+        Generate the draft Markdown/PDF action plan for administrative review.
         """
     )
-    st.markdown("#### System status")
-    st.success("Offline multi-city demonstration pipeline is available.")
-    st.info("Puri, Guwahati and Chennai are representative high-risk contexts, not a definitive national ranking. See docs/multicity_demo_sources.md for source context and honesty rules.")
+    st.success("Core deterministic workflow is offline-ready.")
+    st.caption("Puri, Guwahati and Chennai are representative high-risk contexts, not a definitive national ranking.")
 
 st.divider()
 st.subheader("Data & Decision Layers")
 source_cols = st.columns(3, gap="large")
 with source_cols[0]:
-    render_source_card("Deterministic analysis", "Offline-ready", "Risk, capacity, relocation and exports do not require internet access.")
+    render_source_card("Deterministic analysis", "Offline-ready", "Risk, capacity, relocation and exports continue without internet access.")
 with source_cols[1]:
-    render_source_card("Verified external context", "IMD · USGS · NDMA", "LIVE/CACHED sources are isolated from scoring until source-specific mappings are approved.")
+    render_source_card("Verified live context", "Weather · Quakes · Events", "Open-Meteo, USGS and GDACS are source-labelled and kept separate from scoring unless calibrated.")
 with source_cols[2]:
-    render_source_card("GIS integration path", "Bhuvan OGC", "Flood-hazard service family verified; exact layer/class mapping remains gated.")
+    render_source_card("Authoritative GIS context", "NRSC / ISRO Bhuvan", "Verified WMS overlays can be shown beside DEMO hazard footprints without silently changing the score.")
 
 st.divider()
 st.subheader("Operational Modules")
-modules = st.columns(6)
 module_text = [
-    ("Command Center", "Monitor risk, exposure, alerts and shelter capacity."),
-    ("Red Zone Map", "View risk, hazard footprints and coordination zones."),
-    ("Risk Analysis", "Inspect hazard-profile and final-risk contributions."),
-    ("Relocation Planner", "Compare capacity-aware local shelter recommendations."),
-    ("Scenario Studio", "Adjust risk weights and measure policy impact."),
-    ("Live Data Context", "Refresh IMD/USGS/NDMA evidence with source-mode badges."),
+    ("Command Center", "Monitor incident context, exposure, alerts and capacity status."),
+    ("Red Zone Map", "Inspect risk, Bhuvan context, shelter destination and evacuation route."),
+    ("Risk Analysis", "See exactly which weighted components drive the final risk score."),
+    ("Relocation Planner", "Rank safe shelters, split population and protect shared capacity."),
+    ("Scenario Studio", "Test policy-weight changes without changing the frozen production contract."),
+    ("Live Data Context", "Refresh real-world sources and see LIVE/CACHED/DEMO provenance clearly."),
 ]
-for col, (name, description) in zip(modules, module_text):
-    with col:
-        st.markdown(f"**{name}**")
-        st.caption(description)
+for start in range(0, len(module_text), 3):
+    row = st.columns(3, gap="large")
+    for col, (name, description) in zip(row, module_text[start:start + 3]):
+        with col:
+            render_source_card(name, "Open module", description)
+
 render_disclaimer()
