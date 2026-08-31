@@ -1,9 +1,9 @@
 """Optional disaster-alert feed adapter with strict LIVE/CACHED/DEMO labeling.
 
-The exact NDMA SACHET feed URL is intentionally not hardcoded. Configure a
-verified public CAP/RSS feed through SIH_SACHET_FEED_URL before presenting the
-source as LIVE. Without that setting, the UI receives clearly labelled DEMO
-sample alerts and the core offline workflow remains unaffected.
+Configure a verified public CAP/RSS feed through SIH_SACHET_FEED_URL before
+presenting the source as LIVE. The NDMA SACHET integration guide requires ETag
+revalidation for CAP XML; the shared live-data layer follows that behavior and
+uses a confirmed-current cache on HTTP 304.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.live_data import DataEnvelope, demo_envelope, fetch_text_with_cache
+from src.live_data import DataEnvelope, demo_envelope, fetch_text_with_etag_cache
 
 
 FEED_URL_ENV_VAR = "SIH_SACHET_FEED_URL"
@@ -33,7 +33,7 @@ _DEMO_ALERTS = [
         "severity": "Moderate",
         "urgency": "Expected",
         "area": "Demonstration district",
-        "headline": "No live alert feed is configured; this row is synthetic UI fallback content.",
+        "headline": "No verified live alert feed is configured; this row is synthetic UI fallback content.",
         "published": None,
         "link": None,
     },
@@ -55,29 +55,15 @@ def parse_cap_alerts(xml_text: str) -> list[dict]:
         area = info.find("cap:area", CAP_NAMESPACE)
         alerts.append(
             {
-                "event": info.findtext(
-                    "cap:event", default="Unknown Event", namespaces=CAP_NAMESPACE
-                ),
-                "severity": info.findtext(
-                    "cap:severity", default="Unknown", namespaces=CAP_NAMESPACE
-                ),
-                "urgency": info.findtext(
-                    "cap:urgency", default=None, namespaces=CAP_NAMESPACE
-                ),
-                "area": area.findtext(
-                    "cap:areaDesc", default="Unspecified", namespaces=CAP_NAMESPACE
-                )
+                "event": info.findtext("cap:event", default="Unknown Event", namespaces=CAP_NAMESPACE),
+                "severity": info.findtext("cap:severity", default="Unknown", namespaces=CAP_NAMESPACE),
+                "urgency": info.findtext("cap:urgency", default=None, namespaces=CAP_NAMESPACE),
+                "area": area.findtext("cap:areaDesc", default="Unspecified", namespaces=CAP_NAMESPACE)
                 if area is not None
                 else "Unspecified",
-                "headline": info.findtext(
-                    "cap:headline", default=None, namespaces=CAP_NAMESPACE
-                ),
-                "published": alert_elem.findtext(
-                    "cap:sent", default=None, namespaces=CAP_NAMESPACE
-                ),
-                "link": alert_elem.findtext(
-                    "cap:web", default=None, namespaces=CAP_NAMESPACE
-                ),
+                "headline": info.findtext("cap:headline", default=None, namespaces=CAP_NAMESPACE),
+                "published": alert_elem.findtext("cap:sent", default=None, namespaces=CAP_NAMESPACE),
+                "link": alert_elem.findtext("cap:web", default=None, namespaces=CAP_NAMESPACE),
             }
         )
     return alerts
@@ -124,6 +110,7 @@ def _envelope_summary(envelope: DataEnvelope) -> dict:
         "source": envelope.source,
         "source_url": envelope.source_url,
         "stale": envelope.stale,
+        "etag": envelope.etag,
     }
 
 
@@ -134,11 +121,11 @@ def fetch_disaster_alerts(
     """Fetch optional alerts while preserving explicit source-mode semantics."""
     feed_url = feed_url or os.getenv(FEED_URL_ENV_VAR)
     if not feed_url:
-        envelope = demo_envelope("NDMA SACHET-compatible alert UI (feed not configured)", _DEMO_ALERTS)
+        envelope = demo_envelope("NDMA SACHET-compatible alert UI (verified feed not configured)", _DEMO_ALERTS)
         return {**_envelope_summary(envelope), "alerts": _DEMO_ALERTS}
 
     try:
-        envelope = fetch_text_with_cache(
+        envelope = fetch_text_with_etag_cache(
             source="Configured disaster alert feed",
             url=feed_url,
             cache_path=cache_path,
