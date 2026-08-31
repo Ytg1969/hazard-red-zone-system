@@ -1,6 +1,7 @@
 """Optional USGS earthquake context adapter with LIVE→CACHED behavior."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -16,20 +17,17 @@ CITY_CENTERS = {
 USGS_QUERY = "https://earthquake.usgs.gov/fdsnws/event/1/query"
 
 
-def fetch_recent_earthquakes(city: str, *, days: int = 30, radius_km: int = 500, min_magnitude: float = 2.5) -> dict:
-    """Fetch recent earthquakes near a demo city from the official USGS FDSN API.
+def _cache_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")[:80] or "location"
 
-    This is contextual evidence only; it does not directly alter the deterministic
-    risk score. Successful responses are LIVE and cached responses are CACHED.
-    """
-    if city not in CITY_CENTERS:
-        raise ValueError(f"earthquake context requires one of {sorted(CITY_CENTERS)}")
-    lat, lon = CITY_CENTERS[city]
+
+def fetch_recent_earthquakes_at_location(name: str, latitude: float, longitude: float, *, days: int = 30, radius_km: int = 500, min_magnitude: float = 2.5) -> dict:
+    """Fetch recent earthquakes near arbitrary coordinates from USGS FDSN."""
     start = (datetime.now(timezone.utc) - timedelta(days=max(1, int(days)))).strftime("%Y-%m-%dT%H:%M:%S")
     params = urlencode({
         "format": "geojson",
-        "latitude": lat,
-        "longitude": lon,
+        "latitude": float(latitude),
+        "longitude": float(longitude),
         "maxradiuskm": int(radius_km),
         "starttime": start,
         "minmagnitude": float(min_magnitude),
@@ -39,7 +37,7 @@ def fetch_recent_earthquakes(city: str, *, days: int = 30, radius_km: int = 500,
     envelope = fetch_json_with_cache(
         source="USGS FDSN Earthquake Catalog",
         url=f"{USGS_QUERY}?{params}",
-        cache_path=Path("data/cache") / f"usgs_{city.lower()}_earthquakes.json",
+        cache_path=Path("data/cache/usgs") / f"{_cache_key(name)}_earthquakes.json",
         timeout=8.0,
     )
     events = []
@@ -61,5 +59,14 @@ def fetch_recent_earthquakes(city: str, *, days: int = 30, radius_km: int = 500,
         "stale": envelope.stale,
         "fetched_at": envelope.fetched_at,
         "source_url": envelope.source_url,
+        "location": name,
         "events": events,
     }
+
+
+def fetch_recent_earthquakes(city: str, *, days: int = 30, radius_km: int = 500, min_magnitude: float = 2.5) -> dict:
+    """Fetch recent earthquakes near one of the bundled demo cities."""
+    if city not in CITY_CENTERS:
+        raise ValueError(f"earthquake context requires one of {sorted(CITY_CENTERS)}")
+    lat, lon = CITY_CENTERS[city]
+    return fetch_recent_earthquakes_at_location(city, lat, lon, days=days, radius_km=radius_km, min_magnitude=min_magnitude)
