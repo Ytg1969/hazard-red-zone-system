@@ -2,6 +2,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.earthquake_context import fetch_recent_earthquakes
 from src.live_alerts import fetch_disaster_alerts
 from src.pipeline import (
     calculate_summary,
@@ -71,7 +72,7 @@ render_kpi_strip([
 st.caption(f"Active hazard profile: **{hazard_profile.title()}** · Prototype hazard-model completeness is shown per location.")
 
 st.divider()
-tab1, tab2, tab3, tab4 = st.tabs(["Risk Overview", "Habitation Data", "Shelter Capacity", "External Alerts"])
+tab1, tab2, tab3, tab4 = st.tabs(["Risk Overview", "Habitation Data", "Shelter Capacity", "External Context"])
 with tab1:
     left, right = st.columns(2, gap="large")
     with left:
@@ -101,21 +102,40 @@ with tab3:
     st.dataframe(shelters[columns].sort_values("available_capacity", ascending=False), width="stretch", hide_index=True)
 
 with tab4:
-    st.subheader("NDMA SACHET-compatible CAP / RSS warning feed")
-    st.caption("The official SACHET portal publishes CAP/RSS alerts. This connector is labelled LIVE only when a verified feed URL is explicitly configured; otherwise it uses cached or DEMO content.")
-    alert_result = fetch_disaster_alerts()
-    render_data_mode_indicator(alert_result["mode"])
-    st.caption(f"Source: {alert_result['source']} | Retrieved: {alert_result['fetched_at']}")
-    if alert_result.get("stale"):
-        st.warning("Displayed alert data is cached because the source could not be refreshed.")
-    if alert_result.get("error"):
-        st.warning("Configured alert source was unavailable; demonstration alerts are shown instead.")
-    alerts = pd.DataFrame(alert_result.get("alerts", []))
-    if alerts.empty:
-        st.info("No alerts were returned by the configured feed.")
-    else:
-        display_columns = [c for c in ["event", "severity", "urgency", "area", "headline", "published"] if c in alerts.columns]
-        st.dataframe(alerts[display_columns], width="stretch", hide_index=True)
-    st.info("SACHET documentation requires cache-aware CAP XML consumption. Do not invent an identifier or mark an unverified endpoint LIVE.")
+    alert_tab, earthquake_tab = st.tabs(["NDMA SACHET-compatible Alerts", "USGS Earthquake Context"])
+    with alert_tab:
+        st.caption("The official SACHET portal uses CAP-based alert dissemination. This connector is labelled LIVE only when a verified feed URL is explicitly configured; otherwise it uses cached or DEMO content.")
+        alert_result = fetch_disaster_alerts()
+        render_data_mode_indicator(alert_result["mode"])
+        st.caption(f"Source: {alert_result['source']} | Retrieved: {alert_result['fetched_at']}")
+        if alert_result.get("stale"):
+            st.warning("Displayed alert data is cached because the source could not be refreshed.")
+        if alert_result.get("error"):
+            st.warning("Configured alert source was unavailable; demonstration alerts are shown instead.")
+        alerts = pd.DataFrame(alert_result.get("alerts", []))
+        if alerts.empty:
+            st.info("No alerts were returned by the configured feed.")
+        else:
+            display_columns = [c for c in ["event", "severity", "urgency", "area", "headline", "published"] if c in alerts.columns]
+            st.dataframe(alerts[display_columns], width="stretch", hide_index=True)
+        st.info("Do not invent a SACHET identifier or mark an unverified endpoint LIVE. External alerts remain separate from the deterministic risk score unless a verified source-specific mapping is implemented.")
+
+    with earthquake_tab:
+        context_city = city if city in {"Puri", "Guwahati", "Chennai"} else st.selectbox("Context city", ["Guwahati", "Puri", "Chennai"], key="earthquake_context_city")
+        st.caption("Optional official USGS FDSN earthquake-catalog context. This external feed does not silently alter the project's risk score or replace Indian seismic-hazard products.")
+        try:
+            earthquake_result = fetch_recent_earthquakes(context_city)
+            render_data_mode_indicator(earthquake_result["mode"])
+            st.caption(f"Source: {earthquake_result['source']} | Retrieved: {earthquake_result['fetched_at']}")
+            if earthquake_result.get("stale"):
+                st.warning("USGS context is being shown from cache because the source could not be refreshed.")
+            quake_df = pd.DataFrame(earthquake_result.get("events", []))
+            if quake_df.empty:
+                st.info("No matching earthquakes were returned for the selected search window and radius.")
+            else:
+                show = [c for c in ["magnitude", "place", "depth_km", "time", "latitude", "longitude"] if c in quake_df.columns]
+                st.dataframe(quake_df[show].head(25), width="stretch", hide_index=True)
+        except Exception as exc:
+            st.info(f"USGS earthquake context is unavailable right now; the offline DEMO analysis continues normally. ({exc})")
 
 render_disclaimer()
