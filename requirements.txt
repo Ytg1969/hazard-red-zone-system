@@ -10,4 +10,5 @@ scikit-learn
 rasterio
 networkx
 osmnx
+reportlab
 pytest
