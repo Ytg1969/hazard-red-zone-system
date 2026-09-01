@@ -7,7 +7,6 @@ folium
 streamlit-folium
 plotly
 scikit-learn
-rasterio
 networkx
 osmnx
 reportlab
