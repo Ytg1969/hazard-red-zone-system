@@ -23,6 +23,7 @@ REQUIRED_PAGES = [
     "pages/6_Methodology.py",
     "pages/7_Live_Data_Context.py",
     "pages/8_System_Readiness.py",
+    "pages/9_Operational_Data.py",
 ]
 
 
