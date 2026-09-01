@@ -2,22 +2,49 @@ import pandas as pd
 import streamlit as st
 
 from src.live_operations import fetch_operations_snapshot
-from src.operational_hazards import geojson_to_gdf, validate_geojson_hazard
+from src.operational_hazards import configured_hazard_source, geojson_to_gdf, validate_geojson_hazard
 from src.operational_sources import configured_operational_urls, fetch_operational_habitations, fetch_operational_shelters
 from src.operational_workspace import normalize_operational_habitations, normalize_operational_shelters, serialize_workspace
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters
+from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_kpi_strip, render_page_header
 
 st.set_page_config(page_title="Operational Data", page_icon="DATA", layout="wide")
 inject_global_css()
 render_page_header(
     "Operational Data Workspace",
-    "Load authority/field habitation, relocation-site and calibrated hazard data; activate one shared workspace for map, risk and relocation modules.",
+    "Activate validated habitation, relocation-site and calibrated hazard sources for every operational module.",
 )
 
-st.info("This is the transition path away from bundled demo cities. Reachability does not prove authority: source owner, update time, field definitions and hazard calibration must be verified.")
+st.info(
+    "This workspace is the production-data gateway. Reachability does not prove authority: source ownership, timestamps, field definitions and hazard calibration must be verified."
+)
 
-source_mode = st.segmented_control("Settlement/site source", ["Upload files", "Configured HTTPS feeds"], default="Upload files")
+# Auto-bootstrap configured deployment feeds so a public deployment does not
+# require every new browser session to upload the same authority datasets.
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds could not be auto-loaded: {exc}")
+
+configured = configured_operational_urls()
+configured_hazard = configured_hazard_source()
+
+st.markdown("### Source configuration")
+config_cols = st.columns(3)
+config_cols[0].metric("Habitation feed", "Configured" if configured.get("habitations") else "Not configured")
+config_cols[1].metric("Relocation-site feed", "Configured" if configured.get("shelters") else "Not configured")
+config_cols[2].metric(
+    "Calibrated hazard feed",
+    "Ready" if configured_hazard.get("url") and configured_hazard.get("calibration_confirmed") else "Not ready",
+)
+st.caption(
+    "Deployment variables: `SIH_HABITATION_CSV_URL`, `SIH_SHELTER_CSV_URL`, `SIH_HAZARD_GEOJSON_URL`, "
+    "`SIH_HAZARD_CALIBRATION_CONFIRMED`, optional `SIH_HAZARD_SOURCE_LABEL`."
+)
+
+source_mode = st.segmented_control("Settlement/site source", ["Current / configured", "Upload files", "Refresh HTTPS feeds"], default="Current / configured")
 label = st.text_input("Operational area label", placeholder="e.g. Wayanad District, Kerala")
 
 if source_mode == "Upload files":
@@ -26,25 +53,22 @@ if source_mode == "Upload files":
         habitation_upload = st.file_uploader("Habitation / settlement CSV", type=["csv"], key="ops_hab")
     with right:
         shelter_upload = st.file_uploader("Shelter / relocation-site CSV", type=["csv"], key="ops_shelter")
-    activate = st.button("Validate and activate operational workspace", type="primary", width="stretch", disabled=not (habitation_upload and shelter_upload))
-    if activate:
+    if st.button("Validate and activate uploaded workspace", type="primary", width="stretch", disabled=not (habitation_upload and shelter_upload)):
         try:
             habitations_raw, h_assessment = normalize_operational_habitations(pd.read_csv(habitation_upload))
             shelters_raw, s_assessment = normalize_operational_shelters(pd.read_csv(shelter_upload))
             st.session_state["operational_workspace"] = serialize_workspace(habitations_raw, shelters_raw, label=label or "Operational upload")
             st.session_state["operational_habitation_assessment"] = h_assessment
             st.session_state["operational_shelter_assessment"] = s_assessment
-            st.success("Operational workspace activated for this browser session.")
+            st.success("Uploaded operational workspace activated for this browser session.")
+            st.rerun()
         except Exception as exc:
-            st.error(f"Could not activate operational data: {exc}")
-else:
-    configured = configured_operational_urls()
-    c1, c2 = st.columns(2)
-    c1.write("**Habitation feed:** " + ("configured" if configured["habitations"] else "not configured"))
-    c2.write("**Shelter feed:** " + ("configured" if configured["shelters"] else "not configured"))
-    st.caption("Deployment variables: `SIH_HABITATION_CSV_URL` and `SIH_SHELTER_CSV_URL`. URLs must use HTTPS.")
-    refresh_feeds = st.button("Fetch, validate and activate configured feeds", type="primary", width="stretch", disabled=not (configured["habitations"] and configured["shelters"]))
-    if refresh_feeds:
+            st.error(f"Could not activate uploaded data: {exc}")
+
+elif source_mode == "Refresh HTTPS feeds":
+    if not (configured.get("habitations") and configured.get("shelters")):
+        st.warning("Both operational HTTPS feed URLs must be configured before refresh.")
+    if st.button("Fetch, validate and activate configured feeds", type="primary", width="stretch", disabled=not (configured.get("habitations") and configured.get("shelters"))):
         try:
             with st.spinner("Fetching configured operational datasets..."):
                 h_result = fetch_operational_habitations()
@@ -57,73 +81,99 @@ else:
                 "shelters": {k: s_result[k] for k in ["mode", "stale", "fetched_at", "source_url"]},
             }
             st.success("Configured operational feeds activated.")
+            st.rerun()
         except Exception as exc:
             st.error(f"Configured feed refresh failed: {exc}")
 
-payload = st.session_state.get("operational_workspace")
-if not payload:
-    st.warning("No operational workspace is active yet. Upload both datasets or configure both HTTPS feeds.")
+# Resolve again after any activation action.
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    resolved = None
+    st.error(f"Operational workspace validation failed: {exc}")
+
+if not resolved:
+    st.warning("No operational workspace is active. Upload both datasets or configure both HTTPS feeds.")
     render_disclaimer()
     st.stop()
 
-habitations_raw = pd.DataFrame(payload["habitations"])
-shelters_raw = pd.DataFrame(payload["shelters"])
+payload = resolved["payload"]
+habitations_raw = resolved["habitations"]
+shelters_raw = resolved["shelters"]
 
-meta = st.columns(4)
-meta[0].metric("Operational area", payload["label"])
-meta[1].metric("Habitation mode", payload["habitation_mode"])
-meta[2].metric("Shelter mode", payload["shelter_mode"])
-meta[3].metric("Records", f"{len(habitations_raw)} + {len(shelters_raw)}")
+meta = st.columns(5)
+meta[0].metric("Operational area", payload.get("label", "Operational dataset"))
+meta[1].metric("Origin", str(resolved.get("origin", "session")).replace("_", " ").title())
+meta[2].metric("Habitation mode", payload.get("habitation_mode", "UNVERIFIED"))
+meta[3].metric("Shelter mode", payload.get("shelter_mode", "UNVERIFIED"))
+meta[4].metric("Records", f"{len(habitations_raw)} + {len(shelters_raw)}")
 
-if payload["habitation_mode"] in {"LIVE", "CACHED"}:
-    render_data_mode_indicator(payload["habitation_mode"])
+mode = payload.get("habitation_mode", "UNVERIFIED")
+if mode in {"LIVE", "CACHED", "DEMO"}:
+    render_data_mode_indicator(mode)
 else:
-    st.warning("Habitation provenance is not fully LIVE/CACHED. Do not present it as authoritative until verified.")
+    st.warning("Habitation provenance is not fully verified. Do not present it as authoritative until source evidence is confirmed.")
 
 feed_status = st.session_state.get("operational_feed_status")
 if feed_status:
-    with st.expander("Configured feed provenance", expanded=False):
+    with st.expander("Settlement/site feed provenance", expanded=False):
         st.json(feed_status)
 
 st.markdown("### Calibrated hazard layer")
 hazard_upload = st.file_uploader(
-    "Hazard polygons GeoJSON",
+    "Upload calibrated hazard polygons GeoJSON",
     type=["geojson", "json"],
     key="ops_hazard_geojson",
-    help="Each feature must have numeric `hazard_score` from 0–100. Upload only after the class-to-score mapping is documented/approved.",
+    help="Every feature must contain numeric hazard_score from 0–100. Activate only when the source-specific mapping is documented.",
 )
 if hazard_upload is not None:
     try:
         hazard_text = hazard_upload.getvalue().decode("utf-8")
         checked = validate_geojson_hazard(hazard_text)
-        st.success(f"Hazard GeoJSON valid: {checked['feature_count']} feature(s).")
-        confirmed = st.checkbox("I confirm this layer's hazard_score mapping is documented and suitable for analytical use", value=False)
-        if st.button("Activate calibrated hazard layer", disabled=not confirmed, width="stretch"):
+        st.success(f"GeoJSON valid: {checked['feature_count']} feature(s).")
+        confirmed = st.checkbox("I confirm this source's hazard_score mapping is documented and approved for analytical use", value=False)
+        if st.button("Activate uploaded calibrated hazard", disabled=not confirmed, width="stretch"):
             st.session_state["operational_hazard_geojson"] = hazard_text
             st.session_state["operational_hazard_name"] = hazard_upload.name
-            st.success("Calibrated hazard layer activated. Use Stored/GIS mode on analytical pages.")
+            st.success("Uploaded calibrated hazard layer activated.")
+            st.rerun()
     except Exception as exc:
         st.error(f"Hazard layer rejected: {exc}")
 
-if st.session_state.get("operational_hazard_geojson"):
-    st.caption(f"Active hazard layer: **{st.session_state.get('operational_hazard_name', 'uploaded GeoJSON')}**")
-    if st.button("Remove active hazard layer"):
-        st.session_state.pop("operational_hazard_geojson", None)
-        st.session_state.pop("operational_hazard_name", None)
-        st.rerun()
+hazard_resolved = None
+try:
+    hazard_resolved = resolve_operational_hazard(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured hazard source is unavailable: {exc}")
 
-hazard_profile = st.selectbox("Analytical hazard profile", ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"], index=0, format_func=lambda value: "Stored / calibrated GIS" if value == "stored" else value.title())
+if hazard_resolved:
+    hcols = st.columns(4)
+    hcols[0].metric("Hazard source", str(hazard_resolved.get("label", "Calibrated GeoJSON")))
+    hcols[1].metric("Origin", str(hazard_resolved.get("origin", "session")).replace("_", " ").title())
+    hcols[2].metric("Mode", hazard_resolved.get("mode", "SESSION"))
+    hcols[3].metric("Features", hazard_resolved.get("feature_count", "—"))
+    if hazard_resolved.get("stale"):
+        st.warning("The calibrated hazard source is being served from cache because the latest refresh was unavailable.")
+else:
+    st.info("No calibrated hazard layer is active. Stored habitation hazard_score values can still be used, but their provenance must be verified separately.")
+
+hazard_profile = st.selectbox(
+    "Analytical hazard profile",
+    ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+    index=0,
+    format_func=lambda value: "Stored / calibrated GIS" if value == "stored" else value.title(),
+)
 
 try:
     hazard_data = None
-    if hazard_profile == "stored" and st.session_state.get("operational_hazard_geojson"):
-        hazard_data = geojson_to_gdf(st.session_state["operational_hazard_geojson"])
+    if hazard_profile == "stored" and hazard_resolved:
+        hazard_data = geojson_to_gdf(hazard_resolved["geojson"])
     habitations = enrich_habitations(habitations_raw, hazard_data=hazard_data, hazard_type=hazard_profile, add_coordination_zones=False)
     shelters = enrich_shelters(shelters_raw)
     summary = calculate_summary(habitations, shelters)
 except Exception as exc:
     st.error(f"Operational analysis could not run: {exc}")
-    st.caption("Stored/GIS mode needs either an activated calibrated GeoJSON layer or a stored hazard_score in every habitation row.")
+    st.caption("Stored/GIS mode requires a verified stored hazard_score or a calibrated GeoJSON hazard layer.")
     render_disclaimer()
     st.stop()
 
@@ -132,7 +182,7 @@ render_kpi_strip([
     ("Critical", f"{summary['critical_red_zones']:,}", "Deterministic classification"),
     ("Population at Risk", f"{summary['population_at_risk']:,}", "HIGH + CRITICAL"),
     ("Immediate Relocation", f"{summary['immediate_relocation_population']:,}", "Decision-support priority"),
-    ("Available Capacity", f"{int(summary['available_shelter_capacity']):,}", "After resource constraints"),
+    ("Available Capacity", f"{int(summary['available_shelter_capacity']):,}", "After limiting-resource constraints"),
 ])
 
 st.markdown("### Priority register")
@@ -141,31 +191,35 @@ st.dataframe(habitations[cols].sort_values("risk_score", ascending=False), width
 
 st.markdown("### Live context at operational geography")
 center = payload["center"]
-if st.button("Refresh live context at operational area", width="stretch"):
-    with st.spinner("Refreshing current weather, air quality and nearby event sources..."):
-        st.session_state["ops_workspace_live_snapshot"] = fetch_operations_snapshot(payload["label"], latitude=float(center["latitude"]), longitude=float(center["longitude"]), days=7, radius_km=300, min_magnitude=2.5)
+if st.button("Refresh live context", width="stretch"):
+    with st.spinner("Refreshing weather, air quality and nearby event sources concurrently..."):
+        st.session_state["ops_workspace_live_snapshot"] = fetch_operations_snapshot(
+            payload.get("label", "Operational area"),
+            latitude=float(center["latitude"]),
+            longitude=float(center["longitude"]),
+            days=7,
+            radius_km=300,
+            min_magnitude=2.5,
+        )
 
 snapshot = st.session_state.get("ops_workspace_live_snapshot")
 if snapshot:
     health = pd.DataFrame(snapshot.get("source_health", []))
     if not health.empty:
         st.dataframe(health.astype(str), width="stretch", hide_index=True)
-    st.caption("Live observations remain corroborating evidence only. They do not silently mutate H/E/V/A.")
+    st.caption("Live observations remain corroborating evidence only; they do not silently mutate H/E/V/A.")
 
-with st.expander("What to provide when I cannot fetch an official source", expanded=False):
-    st.markdown("""
-Send the source URL and, if possible, one sample/download:
-- habitation/population/vulnerability CSV or XLSX;
-- shelter/site CSV with capacity, occupancy, water, sanitation, access and safety fields;
-- GeoJSON/Shapefile/GeoTIFF or WMS/WFS/ArcGIS REST details for hazard layers;
-- API documentation plus a sample JSON/XML response;
-- official data.gov.in, Bhuvan, SDMA/district, IMD, CWC, GSI or other accountable-source link.
+with st.expander("If an official source cannot be fetched", expanded=False):
+    st.markdown(
+        "Send the public source URL plus one sample/download: CSV/XLSX, GeoJSON/Shapefile/GeoTIFF, WMS/WFS/ArcGIS REST layer details, or API docs with a redacted JSON/XML sample. "
+        "For login/token/IP-whitelisted services, do not paste secrets in chat; provide the public schema and configure credentials in deployment secrets."
+    )
 
-If access requires login, token or IP whitelisting, do **not** paste the secret in chat. Provide the public schema/docs and configure credentials in deployment secrets.
-""")
-
-if st.button("Clear operational workspace", type="secondary"):
-    for key in ["operational_workspace", "operational_habitation_assessment", "operational_shelter_assessment", "operational_feed_status", "ops_workspace_live_snapshot", "operational_hazard_geojson", "operational_hazard_name"]:
+if st.button("Clear browser-session workspace", type="secondary"):
+    for key in [
+        "operational_workspace", "operational_habitation_assessment", "operational_shelter_assessment",
+        "operational_feed_status", "ops_workspace_live_snapshot", "operational_hazard_geojson", "operational_hazard_name",
+    ]:
         st.session_state.pop(key, None)
     st.rerun()
 

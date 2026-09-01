@@ -12,21 +12,46 @@ This application is a decision-support prototype being hardened for live operati
 
 ## Environment variables
 
-- `SIH_HABITATION_CSV_URL` — optional HTTPS URL for a validated operational habitation/settlement CSV. The Operational Data page fetches it with LIVE/CACHED provenance and validates it before use.
-- `SIH_SHELTER_CSV_URL` — optional HTTPS URL for a validated operational shelter/relocation-site CSV. The Operational Data page fetches it with LIVE/CACHED provenance and validates it before use.
-- `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains DEMO/unconfigured.
+- `SIH_HABITATION_CSV_URL` — optional HTTPS URL for a validated operational habitation/settlement CSV. Configured feeds are validated and can bootstrap new browser sessions through the Streamlit server cache.
+- `SIH_SHELTER_CSV_URL` — optional HTTPS URL for a validated operational shelter/relocation-site CSV.
+- `SIH_HAZARD_GEOJSON_URL` — optional HTTPS GeoJSON hazard source. Every feature must contain a numeric `hazard_score` in the range 0–100.
+- `SIH_HAZARD_CALIBRATION_CONFIRMED=true` — mandatory gate before a configured hazard GeoJSON can supply the analytical H component. Do not set this until the class/value mapping is documented and reviewed.
+- `SIH_HAZARD_SOURCE_LABEL` — optional human-readable source/layer label for hazard provenance.
+- `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains unconfigured/demo rather than fabricating identifiers.
 - `SIH_ROAD_GRAPHML` — optional local OSM GraphML road-network path. If absent, routing can fall through to OSRM and then explicit straight-line fallback.
 
 Never place credentials inside the repository. If an authority feed requires authentication, configure credentials through the deployment platform's secret/environment facility and keep the public source documentation/schema in the repository.
 
 No API keys are required by the current Open-Meteo, USGS, GDACS, NASA EONET, OSM or public OSRM integrations. IMD may require client/IP authorization; authorization failures must remain visible and must not be bypassed.
 
-## Deployment options
+## Streamlit Community Cloud
 
-### Streamlit Community Cloud
-Best for SIH demonstration and public review. Deploy `app.py` from the `main` branch using Python 3.12. Add only verified operational feed settings under app secrets/environment configuration. Do not add fabricated secrets.
+Best for SIH demonstration and public review.
 
-### Container / VM
+Deploy:
+
+- repository: `Ytg1969/hazard-red-zone-system`
+- branch: `main`
+- entrypoint: `app.py`
+- Python: `3.12`
+
+The app can be deployed with no secrets for the public/no-key source path. Add only verified operational feed configuration after deployment. Do not add fabricated credentials or URLs.
+
+After deployment, smoke-test these pages in this order:
+
+1. Overview / landing page
+2. Operations Hub
+3. Operational Data
+4. Red Zone Map
+5. Risk Analysis
+6. Relocation Planner and PDF export
+7. Live Data Explorer
+8. System Readiness
+
+If deployment fails, record the first red build/runtime error before changing dependencies.
+
+## Container / VM
+
 For a controlled authority deployment, run behind a reverse proxy and use a persistent writable cache directory. Configure monitoring for process availability, outbound connectivity, filesystem usage and API latency.
 
 ## Production gates
@@ -43,9 +68,9 @@ All three must pass.
 
 ## Operational data transition
 
-`pages/9_Operational_Data.py` is the migration path from bundled demonstration cities to real authority datasets. It supports either operator-uploaded CSVs or configured HTTPS CSV feeds. The application validates required fields, coordinates, population/capacity integrity, carrying-capacity evidence and provenance before activation.
+`pages/9_Operational_Data.py` is the migration path from bundled demonstration cities to real authority datasets. It supports operator-uploaded CSVs or configured HTTPS CSV feeds plus a calibrated GeoJSON hazard layer. The application validates required fields, coordinates, population/capacity integrity, carrying-capacity evidence and provenance before activation.
 
-The bundled Puri/Guwahati/Chennai records must remain available only as fallback until a chosen study area's authoritative habitation, shelter and calibrated hazard inputs can drive every core page. Do not remove fallback data before that end-to-end replacement is tested.
+Bundled Puri/Guwahati/Chennai records must remain fallback-only until a chosen study area's authoritative habitation, shelter and calibrated hazard inputs can drive every core page. Do not relabel fallback data as real and do not remove it before that end-to-end replacement is tested.
 
 ## If a source cannot be fetched directly
 
@@ -53,7 +78,7 @@ Obtain one of the following from the accountable agency and preserve its source 
 
 - CSV/XLSX settlement or vulnerability export
 - CSV/XLSX shelter/relocation-site inventory
-- GeoJSON/Shapefile hazard boundaries
+- GeoJSON/Shapefile/GeoTIFF hazard boundaries
 - WMS/WFS/WMTS/ArcGIS REST endpoint plus exact layer name
 - API documentation plus a representative JSON/XML response
 - public data.gov.in/Bhuvan/SDMA/district/IMD/CWC/GSI download link
@@ -76,7 +101,7 @@ The frozen baseline remains:
 
 `Risk = 0.35H + 0.25E + 0.25V + 0.15A`
 
-External weather, event feeds and Bhuvan layers remain context-only until a documented source-specific mapping to a 0–100 analytical input is validated.
+External weather, event feeds and uncalibrated Bhuvan layers remain context-only until a documented source-specific mapping to a 0–100 analytical input is validated.
 
 ## Shelter safety boundary
 
