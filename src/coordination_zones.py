@@ -6,11 +6,15 @@ orders. They only group nearby habitations with similar risk for coordination.
 from __future__ import annotations
 
 import pandas as pd
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 
 
 def assign_coordination_zones(df: pd.DataFrame, n_clusters: int = 3) -> pd.DataFrame:
+    """Assign briefing-only coordination groups.
+
+    scikit-learn is imported lazily because importing it during every Streamlit
+    page bootstrap noticeably increases cold-start and rerun latency even on
+    pages that never use coordination clustering.
+    """
     required = {"latitude", "longitude", "risk_score"}
     missing = required - set(df.columns)
     if missing:
@@ -20,6 +24,9 @@ def assign_coordination_zones(df: pd.DataFrame, n_clusters: int = 3) -> pd.DataF
     if work.empty:
         work["coordination_zone"] = pd.Series(dtype="object")
         return work
+
+    from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
 
     clusters = max(1, min(int(n_clusters), len(work)))
     features = work[["latitude", "longitude", "risk_score"]].astype(float)
