@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from src.live_operations import build_live_snapshot
+from src.live_operations import fetch_operations_snapshot
 from src.provenance import default_provenance_register, source_health
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_page_header
 
@@ -30,7 +30,7 @@ refresh = st.button("Run source health check", type="primary", width="stretch")
 
 if refresh:
     with st.spinner("Checking live and official context sources..."):
-        snapshot = build_live_snapshot(city)
+        snapshot = fetch_operations_snapshot(city)
     rows = []
     for label, source in snapshot.get("sources", {}).items():
         health = source_health(source)
