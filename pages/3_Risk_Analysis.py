@@ -6,23 +6,40 @@ from src.hazard_model import compute_hazard_components
 from src.operational_hazards import geojson_to_gdf
 from src.pipeline import enrich_habitations, load_demo_data, load_demo_hazards
 from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
+from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
 
 st.set_page_config(page_title="Risk Analysis", layout="wide")
 inject_global_css()
 render_page_header("Risk Analysis", "Explainable habitation-level H/E/V/A risk with operational or fallback demonstration inputs.")
 
-workspace = st.session_state.get("operational_workspace")
-operational = bool(workspace)
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds are unavailable: {exc}")
+
+operational = bool(resolved)
+hazard_source = None
 if operational:
+    workspace = resolved["payload"]
     mode = workspace.get("habitation_mode", "UNVERIFIED")
-    render_data_mode_indicator(mode if mode in {"LIVE", "CACHED", "DEMO"} else "DEMO")
+    if mode in {"LIVE", "CACHED", "DEMO"}:
+        render_data_mode_indicator(mode)
+    else:
+        st.warning("Operational workspace provenance is UNVERIFIED.")
     area_label = workspace.get("label", "Operational area")
-    habitations_raw = pd.DataFrame(workspace["habitations"])
+    habitations_raw = resolved["habitations"]
     hazard_profile = st.sidebar.selectbox("Analytical hazard profile", ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"], index=0, format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title())
     hazard_data = None
-    if hazard_profile == "stored" and st.session_state.get("operational_hazard_geojson"):
-        hazard_data = geojson_to_gdf(st.session_state["operational_hazard_geojson"])
+    if hazard_profile == "stored":
+        try:
+            hazard_source = resolve_operational_hazard(auto_configured=True)
+            if hazard_source:
+                hazard_data = geojson_to_gdf(hazard_source["geojson"])
+        except Exception as exc:
+            st.error(f"Configured operational hazard layer could not be loaded: {exc}")
+            st.stop()
     st.sidebar.success(f"Operational workspace: {area_label}")
     st.sidebar.page_link("pages/9_Operational_Data.py", label="Manage operational data")
 else:
@@ -68,7 +85,9 @@ st.divider()
 st.subheader("Hazard evidence")
 if hazard_profile == "stored":
     if operational and hazard_data is not None:
-        st.success(f"Using calibrated uploaded GIS layer: {st.session_state.get('operational_hazard_name', 'GeoJSON')}")
+        source_label = hazard_source.get("label", "Calibrated hazard GeoJSON") if hazard_source else "Calibrated hazard GeoJSON"
+        source_mode = hazard_source.get("mode", "SESSION") if hazard_source else "SESSION"
+        st.success(f"Using calibrated GIS layer: {source_label} · {source_mode}")
         detail = {k: habitation.get(k) for k in ["gis_hazard_score", "gis_hazard_source", "gis_hazard_type", "inside_hazard_zone", "distance_to_hazard_km"] if k in habitation}
         st.json(detail)
     else:

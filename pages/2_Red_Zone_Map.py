@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 
 import folium
-import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
@@ -11,6 +10,7 @@ from src.operational_hazards import geojson_to_gdf
 from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
 from src.relocation import rank_shelters
 from src.routing import estimate_route
+from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import RISK_COLORS, inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
 
 ROAD_GRAPH_FILES = {
@@ -29,25 +29,39 @@ st.set_page_config(page_title="Red Zone Map", layout="wide")
 inject_global_css()
 render_page_header("Red Zone Map", "Operational map for red-zone inspection, calibrated GIS exposure and capacity-safe shelter routing.")
 
-workspace = st.session_state.get("operational_workspace")
-operational = bool(workspace)
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds are unavailable: {exc}")
+
+operational = bool(resolved)
 selected_bhuvan = None
+hazard_source = None
 
 if operational:
+    workspace = resolved["payload"]
     mode = workspace.get("habitation_mode", "UNVERIFIED")
-    render_data_mode_indicator(mode if mode in {"LIVE", "CACHED", "DEMO"} else "DEMO")
+    if mode in {"LIVE", "CACHED", "DEMO"}:
+        render_data_mode_indicator(mode)
+    else:
+        st.warning("Operational workspace provenance is UNVERIFIED.")
     area_label = workspace.get("label", "Operational area")
     hazard_profile = st.sidebar.selectbox("Analytical hazard profile", ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"], index=0, format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title())
-    habitations_raw = pd.DataFrame(workspace["habitations"])
-    shelters_raw = pd.DataFrame(workspace["shelters"])
+    habitations_raw = resolved["habitations"]
+    shelters_raw = resolved["shelters"]
     hazard_data = None
-    if hazard_profile == "stored" and st.session_state.get("operational_hazard_geojson"):
+    if hazard_profile == "stored":
         try:
-            hazard_data = geojson_to_gdf(st.session_state["operational_hazard_geojson"])
+            hazard_source = resolve_operational_hazard(auto_configured=True)
+            if hazard_source:
+                hazard_data = geojson_to_gdf(hazard_source["geojson"])
         except Exception as exc:
-            st.error(f"Active operational hazard layer could not be loaded: {exc}")
+            st.error(f"Configured operational hazard layer could not be loaded: {exc}")
             st.stop()
     st.sidebar.success(f"Operational workspace: {area_label}")
+    if resolved.get("origin") == "configured_feeds":
+        st.sidebar.caption("Habitation/site feeds cached for 5 min")
     st.sidebar.page_link("pages/9_Operational_Data.py", label="Manage operational data")
 else:
     render_data_mode_indicator("DEMO")
@@ -116,7 +130,9 @@ summary[3].metric("Safe candidates", len(ranked_shelters))
 if operational and hazard_data is None and hazard_profile == "stored":
     st.info("No calibrated GeoJSON is active; this view is using the stored hazard_score supplied with the operational habitation dataset.")
 elif operational and hazard_data is not None:
-    st.success(f"Calibrated operational hazard layer active: {st.session_state.get('operational_hazard_name', 'GeoJSON')}")
+    source_label = hazard_source.get("label", "Calibrated hazard GeoJSON") if hazard_source else "Calibrated hazard GeoJSON"
+    source_mode = hazard_source.get("mode", "SESSION") if hazard_source else "SESSION"
+    st.success(f"Calibrated operational hazard layer active: {source_label} · {source_mode}")
 
 map_center = [float(filtered["latitude"].mean()), float(filtered["longitude"].mean())]
 map_obj = folium.Map(location=map_center, zoom_start=10 if len(filtered) < 80 else 8, tiles=None, control_scale=True)

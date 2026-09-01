@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from src.operational_hazards import validate_geojson_hazard
+from src.operational_hazards import configured_hazard_source, fetch_configured_hazard, validate_geojson_hazard
 from src.pipeline import enrich_habitations
 
 
@@ -26,6 +26,24 @@ def test_validate_operational_hazard_geojson():
 def test_reject_out_of_range_hazard_score():
     with pytest.raises(ValueError):
         validate_geojson_hazard(_geojson(140))
+
+
+def test_configured_hazard_requires_explicit_confirmation(monkeypatch):
+    monkeypatch.setenv("SIH_HAZARD_GEOJSON_URL", "https://example.invalid/hazard.geojson")
+    monkeypatch.delenv("SIH_HAZARD_CALIBRATION_CONFIRMED", raising=False)
+    configured = configured_hazard_source()
+    assert configured["calibration_confirmed"] is False
+    with pytest.raises(ValueError, match="CALIBRATION_CONFIRMED"):
+        fetch_configured_hazard()
+
+
+def test_configured_hazard_confirmation_flag(monkeypatch):
+    monkeypatch.setenv("SIH_HAZARD_GEOJSON_URL", "https://example.invalid/hazard.geojson")
+    monkeypatch.setenv("SIH_HAZARD_CALIBRATION_CONFIRMED", "true")
+    monkeypatch.setenv("SIH_HAZARD_SOURCE_LABEL", "Authority flood layer")
+    configured = configured_hazard_source()
+    assert configured["calibration_confirmed"] is True
+    assert configured["label"] == "Authority flood layer"
 
 
 def test_stored_mode_can_use_gis_score(monkeypatch):
