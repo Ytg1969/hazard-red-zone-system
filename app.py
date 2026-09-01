@@ -1,7 +1,7 @@
 import streamlit as st
 
-from src.operational_workspace import restore_workspace
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
+from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -20,36 +20,40 @@ render_page_header(
     "Emergency Operations Centre | SIH26191 | Situation awareness, explainable risk and capacity-aware relocation planning",
 )
 
-operational_payload = st.session_state.get("operational_workspace")
-if operational_payload:
-    try:
-        habitations_raw, shelters_raw = restore_workspace(operational_payload)
-        active_label = operational_payload.get("label", "Operational dataset")
-        active_mode = operational_payload.get("habitation_mode", "UNVERIFIED")
-        with st.sidebar:
-            st.success(f"Operational workspace: {active_label}")
-            hazard_profile = st.selectbox(
-                "Analytical hazard profile",
-                ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
-                index=0,
-                format_func=lambda value: value.title(),
-                key="overview_operational_hazard",
-            )
-            if st.button("Open Operational Data workspace", width="stretch"):
-                st.switch_page("pages/9_Operational_Data.py")
-        if active_mode in {"LIVE", "CACHED", "DEMO"}:
-            render_data_mode_indicator(active_mode)
-        else:
-            st.warning("Active operational data has unverified provenance.")
-        context_caption = f"Active operational geography: **{active_label}** · Hazard profile: **{hazard_profile.title()}**"
-    except Exception as exc:
-        st.error(f"Active operational workspace is invalid: {exc}")
-        operational_payload = None
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds could not be activated automatically: {exc}")
 
-if not operational_payload:
+if resolved:
+    operational_payload = resolved["payload"]
+    habitations_raw = resolved["habitations"]
+    shelters_raw = resolved["shelters"]
+    active_label = operational_payload.get("label", "Operational dataset")
+    active_mode = operational_payload.get("habitation_mode", "UNVERIFIED")
+    with st.sidebar:
+        st.success(f"Operational workspace: {active_label}")
+        if resolved.get("origin") == "configured_feeds":
+            st.caption("Loaded from configured HTTPS feeds · server cache 5 min")
+        hazard_profile = st.selectbox(
+            "Analytical hazard profile",
+            ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+            index=0,
+            format_func=lambda value: value.title(),
+            key="overview_operational_hazard",
+        )
+        st.page_link("pages/9_Operational_Data.py", label="Manage Operational Data", use_container_width=True)
+    if active_mode in {"LIVE", "CACHED", "DEMO"}:
+        render_data_mode_indicator(active_mode)
+    else:
+        st.warning("Active operational data has unverified provenance.")
+    context_caption = f"Active operational geography: **{active_label}** · Hazard profile: **{hazard_profile.title()}**"
+else:
     render_data_mode_indicator("DEMO")
     city, hazard_profile = render_demo_scope_controls("overview")
     habitations_raw, shelters_raw = load_demo_data(city)
+    operational_payload = None
     context_caption = f"Fallback geography: **{city}** · Hazard profile: **{hazard_profile.title()}** · synthetic operational DEMO values"
 
 try:
@@ -99,9 +103,9 @@ with left:
 with right:
     st.subheader("Operator Next Actions")
     if operational_payload:
-        st.success("A validated operational workspace is active. The landing page is no longer using bundled demo habitations/shelters for this browser session.")
+        st.success("Operational data is active. Core analytical modules can use the same validated habitation and relocation-site workspace.")
     else:
-        st.info("Fallback demo inputs are active. Open **Operational Data** to load authority/field datasets or configured HTTPS feeds.")
+        st.info("Fallback demo inputs are active. Open **Operational Data** to load authority/field datasets or configure HTTPS feeds.")
     st.markdown(
         """
         **01 — Scope the incident**  

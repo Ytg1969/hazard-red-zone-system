@@ -2,18 +2,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from src.earthquake_context import fetch_recent_earthquakes
-from src.imd_context import fetch_imd_context
-from src.live_alerts import fetch_disaster_alerts
-from src.pipeline import (
-    calculate_summary,
-    enrich_habitations,
-    enrich_shelters,
-    load_demo_data,
-    load_demo_hazards,
-    load_uploaded_habitations,
-    load_uploaded_shelters,
-)
+from src.live_operations import fetch_operations_snapshot
+from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
+from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -22,29 +13,58 @@ from src.ui_theme import (
     render_kpi_strip,
     render_page_header,
     render_source_card,
-    render_upload_controls,
 )
 
 st.set_page_config(page_title="Command Center", layout="wide")
 inject_global_css()
-render_page_header("Command Center", "Operational summary of multi-hazard risk, exposed population, warnings and shelter capacity.")
-render_data_mode_indicator("DEMO")
-city, hazard_profile = render_demo_scope_controls("command")
-uploaded_habitations, uploaded_shelters = render_upload_controls("command")
+render_page_header("Command Center", "Operational summary of multi-hazard risk, exposed population, source health and relocation capacity.")
+
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds are unavailable: {exc}")
+
+if resolved:
+    payload = resolved["payload"]
+    habitations_raw = resolved["habitations"]
+    shelters_raw = resolved["shelters"]
+    active_label = str(payload.get("label", "Operational dataset"))
+    mode = str(payload.get("habitation_mode", "UNVERIFIED"))
+    center = payload.get("center", {})
+    with st.sidebar:
+        st.success(f"Operational workspace: {active_label}")
+        hazard_profile = st.selectbox(
+            "Analytical hazard profile",
+            ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+            index=0,
+            format_func=lambda value: value.title(),
+            key="command_operational_hazard",
+        )
+        st.page_link("pages/9_Operational_Data.py", label="Manage Operational Data", use_container_width=True)
+    if mode in {"LIVE", "CACHED", "DEMO"}:
+        render_data_mode_indicator(mode)
+    else:
+        st.warning("Operational workspace provenance is UNVERIFIED.")
+    data_caption = f"Operational geography: **{active_label}** · {hazard_profile.title()}"
+else:
+    render_data_mode_indicator("DEMO")
+    city, hazard_profile = render_demo_scope_controls("command")
+    habitations_raw, shelters_raw = load_demo_data(city)
+    active_label = city
+    center = {
+        "latitude": float(habitations_raw["latitude"].mean()),
+        "longitude": float(habitations_raw["longitude"].mean()),
+    }
+    data_caption = f"Fallback DEMO geography: **{city}** · {hazard_profile.title()}"
 
 try:
-    habitations_raw, shelters_raw = load_demo_data(city)
-    if uploaded_habitations is not None:
-        habitations_raw = load_uploaded_habitations(uploaded_habitations)
-        st.sidebar.warning("Habitation CSV is user supplied and is not treated as LIVE government data.")
-    if uploaded_shelters is not None:
-        shelters_raw = load_uploaded_shelters(uploaded_shelters)
-        st.sidebar.warning("Shelter CSV is user supplied and is not treated as LIVE government data.")
-    try:
-        hazards = load_demo_hazards()
-    except Exception:
-        hazards = None
-    habitations = enrich_habitations(habitations_raw, hazard_data=hazards, hazard_type=hazard_profile)
+    habitations = enrich_habitations(
+        habitations_raw,
+        hazard_data=None,
+        hazard_type=hazard_profile,
+        add_coordination_zones=False,
+    )
     shelters = enrich_shelters(shelters_raw)
 except Exception as exc:
     st.error(f"Unable to prepare the command-center dataset: {exc}")
@@ -71,10 +91,10 @@ render_kpi_strip([
     ("Immediate Relocation", f"{summary['immediate_relocation_population']:,}", None),
     ("Shelter Capacity", f"{int(summary['available_shelter_capacity']):,}", "Available after limiting-resource constraints"),
 ])
-st.caption(f"Active hazard profile: **{hazard_profile.title()}** · Prototype hazard-model completeness is shown per location.")
+st.caption(data_caption + " · live context remains analytically isolated until calibrated.")
 
 st.divider()
-tab1, tab2, tab3, tab4 = st.tabs(["Risk Overview", "Habitation Data", "Shelter Capacity", "External Context"])
+tab1, tab2, tab3, tab4 = st.tabs(["Risk Overview", "Habitation Data", "Shelter Capacity", "Live Source Console"])
 with tab1:
     left, right = st.columns(2, gap="large")
     with left:
@@ -83,7 +103,7 @@ with tab1:
     with right:
         priority = filtered["relocation_priority"].value_counts().reindex(["IMMEDIATE", "SHORT_TERM", "MEDIUM_TERM", "MONITOR"], fill_value=0).rename_axis("Priority").reset_index(name="Habitations")
         st.plotly_chart(px.bar(priority, x="Priority", y="Habitations", title="Relocation Priority"), width="stretch")
-    table_columns = [c for c in ["name", "demo_city", "population", "risk_score", "risk_level", "relocation_priority", "coordination_zone", "hazard_data_completeness", "risk_drivers"] if c in filtered.columns]
+    table_columns = [c for c in ["name", "population", "risk_score", "risk_level", "relocation_priority", "hazard_data_completeness", "risk_drivers"] if c in filtered.columns]
     st.subheader("Highest-risk locations")
     st.dataframe(filtered[table_columns].sort_values("risk_score", ascending=False), width="stretch", hide_index=True)
 
@@ -100,87 +120,58 @@ with tab3:
     c1.metric("Effective Capacity", f"{int(total_effective):,}")
     c2.metric("Current Occupancy", f"{int(total_occupied):,}")
     c3.metric("Available Capacity", f"{int(total_available):,}")
-    columns = [c for c in ["name", "demo_city", "effective_capacity", "current_occupancy", "available_capacity", "capacity_validation_status", "safety_score"] if c in shelters.columns]
+    columns = [c for c in ["name", "effective_capacity", "current_occupancy", "available_capacity", "capacity_validation_status", "safety_score"] if c in shelters.columns]
     st.dataframe(shelters[columns].sort_values("available_capacity", ascending=False), width="stretch", hide_index=True)
 
 with tab4:
-    st.caption(
-        "External calls are opt-in so the Command Center remains fast and offline-safe. "
-        "LIVE/CACHED context never silently modifies the deterministic risk score."
-    )
-    context_city = city if city in {"Puri", "Guwahati", "Chennai"} else st.selectbox(
-        "External-context city", ["Puri", "Guwahati", "Chennai"], key="external_context_city"
-    )
-    cards = st.columns(3, gap="large")
+    st.caption("External sources are fetched only when requested. Independent feeds are queried concurrently to keep the page responsive.")
+    cards = st.columns(4, gap="small")
     with cards[0]:
-        render_source_card("IMD", "Warnings + rainfall", "Official district APIs; click refresh below when internet is available.")
+        render_source_card("Weather + AQI", "Open-Meteo", "Current weather and air quality at the operational-area center.")
     with cards[1]:
-        render_source_card("USGS", "Earthquake catalogue", "Official FDSN event query around the selected city.")
+        render_source_card("Events", "USGS · GDACS · EONET", "Nearby earthquake and disaster-event context.")
     with cards[2]:
-        render_source_card("NDMA SACHET", "CAP/RSS alert path", "Verified identifier required; ETag cache handling is implemented.")
+        render_source_card("IMD", "Approval dependent", "Official meteorological source; authorization failures remain visible.")
+    with cards[3]:
+        render_source_card("SACHET", "Configured CAP/RSS", "LIVE only after a verified feed is configured.")
 
-    weather_tab, alert_tab, earthquake_tab = st.tabs(["IMD Weather", "NDMA SACHET", "USGS Earthquakes"])
+    live_key = f"command_live_{active_label}_{float(center['latitude']):.4f}_{float(center['longitude']):.4f}"
+    if st.button("Refresh operational live sources", type="primary", width="stretch"):
+        with st.spinner("Refreshing independent live sources in parallel..."):
+            st.session_state[live_key] = fetch_operations_snapshot(
+                active_label,
+                latitude=float(center["latitude"]),
+                longitude=float(center["longitude"]),
+                days=7,
+                radius_km=300,
+                min_magnitude=2.5,
+            )
 
-    with weather_tab:
-        if st.button("Refresh IMD context", key="refresh_imd_context", width="stretch"):
-            with st.spinner("Fetching IMD warning and rainfall context..."):
-                imd = fetch_imd_context(context_city)
-            render_data_mode_indicator(imd["mode"])
-            if imd.get("stale"):
-                st.warning("IMD response is cached because the source could not be refreshed.")
-            for error in imd.get("errors", []):
-                st.caption(error)
-            warnings = pd.DataFrame(imd.get("warnings", []))
-            rainfall = pd.DataFrame(imd.get("rainfall", []))
-            c1, c2 = st.columns(2)
-            c1.metric("Matched warning rows", len(warnings))
-            c2.metric("Matched rainfall rows", len(rainfall))
-            if warnings.empty:
-                st.info("No matching warning row was returned for the selected district/city.")
+    snapshot = st.session_state.get(live_key)
+    if not snapshot:
+        st.info("No network request has been made on this page yet. Click refresh when current situational context is needed.")
+    else:
+        health = pd.DataFrame(snapshot.get("source_health", []))
+        if not health.empty:
+            health = health.astype(str)
+            st.dataframe(health, width="stretch", hide_index=True)
+        events = pd.DataFrame(snapshot.get("events", []))
+        e1, e2 = st.columns([1.5, 1], gap="large")
+        with e1:
+            st.markdown("#### Nearby events")
+            if events.empty:
+                st.success("No matching nearby events were returned for the current search window.")
             else:
-                st.dataframe(warnings, width="stretch", hide_index=True)
-            if not rainfall.empty:
-                with st.expander("District rainfall response"):
-                    st.dataframe(rainfall, width="stretch", hide_index=True)
-        else:
-            st.info("Press Refresh IMD context to query the verified official endpoints. No network request is made automatically.")
-
-    with alert_tab:
-        if st.button("Refresh configured SACHET-compatible feed", key="refresh_sachet_context", width="stretch"):
-            alert_result = fetch_disaster_alerts()
-            render_data_mode_indicator(alert_result["mode"])
-            st.caption(f"Source: {alert_result['source']} | Retrieved: {alert_result['fetched_at']}")
-            if alert_result.get("stale"):
-                st.warning("Displayed alert data is cached because the source could not be refreshed.")
-            if alert_result.get("error"):
-                st.warning("Configured alert source was unavailable; demonstration alerts are shown instead.")
-            alerts = pd.DataFrame(alert_result.get("alerts", []))
-            if alerts.empty:
-                st.info("No alerts were returned by the configured feed.")
-            else:
-                display_columns = [c for c in ["event", "severity", "urgency", "area", "headline", "published"] if c in alerts.columns]
-                st.dataframe(alerts[display_columns], width="stretch", hide_index=True)
-        else:
-            st.info("No SACHET request is made automatically. Configure a verified feed identifier/URL before claiming LIVE mode.")
-
-    with earthquake_tab:
-        if st.button("Refresh USGS earthquake context", key="refresh_usgs_context", width="stretch"):
-            with st.spinner("Fetching recent USGS earthquake events..."):
-                try:
-                    earthquake_result = fetch_recent_earthquakes(context_city)
-                    render_data_mode_indicator(earthquake_result["mode"])
-                    st.caption(f"Source: {earthquake_result['source']} | Retrieved: {earthquake_result['fetched_at']}")
-                    if earthquake_result.get("stale"):
-                        st.warning("USGS context is being shown from cache because the source could not be refreshed.")
-                    quake_df = pd.DataFrame(earthquake_result.get("events", []))
-                    if quake_df.empty:
-                        st.info("No matching earthquakes were returned for the selected search window and radius.")
-                    else:
-                        show = [c for c in ["magnitude", "place", "depth_km", "time", "latitude", "longitude"] if c in quake_df.columns]
-                        st.dataframe(quake_df[show].head(25), width="stretch", hide_index=True)
-                except Exception as exc:
-                    st.info(f"USGS context is unavailable right now; the offline DEMO analysis continues normally. ({exc})")
-        else:
-            st.info("Press Refresh USGS earthquake context to make the external request. No network request is made automatically.")
+                event_columns = [c for c in ["source", "type", "event", "magnitude", "distance_km", "time", "url"] if c in events.columns]
+                st.dataframe(events[event_columns].head(50), width="stretch", hide_index=True)
+        with e2:
+            sources = snapshot.get("sources", {})
+            weather = sources.get("weather", {}).get("current", {}) or {}
+            air = sources.get("air_quality", {}).get("current", {}) or {}
+            st.metric("Temperature", weather.get("temperature_2m", "—"))
+            st.metric("Precipitation", weather.get("precipitation", "—"))
+            st.metric("Wind", weather.get("wind_speed_10m", "—"))
+            st.metric("US AQI", air.get("us_aqi", "—"))
+        st.warning("LIVE/CACHED observations are corroborating evidence only until source-specific calibration is approved for scoring.")
 
 render_disclaimer()
