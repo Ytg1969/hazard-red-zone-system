@@ -1,6 +1,6 @@
 import streamlit as st
 
-from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
+from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -22,12 +22,17 @@ render_data_mode_indicator("DEMO")
 city, hazard_profile = render_demo_scope_controls("overview")
 
 try:
+    # Keep the landing page intentionally lightweight. The hazard profile uses
+    # the tabular indicators directly, so loading GeoPandas/GeoJSON here adds
+    # cold-start latency without changing the profile score. Exact GIS exposure
+    # remains available on the Red Zone Map and analysis pages.
     habitations_raw, shelters_raw = load_demo_data(city)
-    try:
-        hazards = load_demo_hazards()
-    except Exception:
-        hazards = None
-    habitations = enrich_habitations(habitations_raw, hazard_data=hazards, hazard_type=hazard_profile)
+    habitations = enrich_habitations(
+        habitations_raw,
+        hazard_data=None,
+        hazard_type=hazard_profile,
+        add_coordination_zones=False,
+    )
     shelters = enrich_shelters(shelters_raw)
     summary = calculate_summary(habitations, shelters)
 except Exception as exc:
@@ -55,13 +60,13 @@ with left:
         st.caption(f"Highest current demonstration risk score: {top['risk_score']:.1f}/100")
         st.write(f"Population exposed: **{int(top['population']):,}**  |  Relocation priority: **{top['relocation_priority']}**")
         st.write(f"Primary risk drivers: **{top['risk_drivers']}**")
-        st.caption(f"Coordination grouping: {top.get('coordination_zone', '—')} · Hazard data completeness: {float(top.get('hazard_data_completeness', 0)):.0f}%")
+        st.caption(f"Hazard data completeness: {float(top.get('hazard_data_completeness', 0)):.0f}%")
     with c2:
         render_risk_badge(top["risk_level"])
         st.metric("Risk", f"{top['risk_score']:.1f}")
 
     st.markdown("#### Highest-risk habitations")
-    display_cols = ["name", "demo_city", "population", "risk_score", "risk_level", "relocation_priority", "coordination_zone"]
+    display_cols = ["name", "demo_city", "population", "risk_score", "risk_level", "relocation_priority"]
     display_cols = [c for c in display_cols if c in habitations.columns]
     st.dataframe(habitations[display_cols].sort_values("risk_score", ascending=False).head(10), width="stretch", hide_index=True)
 
@@ -74,7 +79,7 @@ with right:
         Choose the geography and active hazard profile.
 
         **02 — Verify the red zones**  
-        Open the map, compare synthetic footprints with source GIS context, and inspect the highest-risk habitation.
+        Open the map, compare analytical footprints with source GIS context, and inspect the highest-risk habitation.
 
         **03 — Explain the score**  
         Review hazard, exposure, vulnerability and evacuation-difficulty contributions.
@@ -87,7 +92,7 @@ with right:
         """
     )
     st.success("Core deterministic workflow is offline-ready.")
-    st.caption("Puri, Guwahati and Chennai are representative high-risk contexts, not a definitive national ranking.")
+    st.caption("Bundled reference cities remain only until authoritative operational habitation/shelter ingestion is complete.")
 
 st.divider()
 st.subheader("Data & Decision Layers")
@@ -97,17 +102,17 @@ with source_cols[0]:
 with source_cols[1]:
     render_source_card("Verified live context", "Weather · Quakes · Events", "Open-Meteo, USGS and GDACS are source-labelled and kept separate from scoring unless calibrated.")
 with source_cols[2]:
-    render_source_card("Authoritative GIS context", "NRSC / ISRO Bhuvan", "Verified WMS overlays can be shown beside DEMO hazard footprints without silently changing the score.")
+    render_source_card("Authoritative GIS context", "NRSC / ISRO Bhuvan", "Verified WMS overlays can be shown beside analytical hazard footprints without silently changing the score.")
 
 st.divider()
 st.subheader("Operational Modules")
 module_text = [
+    ("Operations Hub", "Refresh live context on demand while deterministic planning stays available offline."),
     ("Command Center", "Monitor incident context, exposure, alerts and capacity status."),
     ("Red Zone Map", "Inspect risk, Bhuvan context, shelter destination and evacuation route."),
     ("Risk Analysis", "See exactly which weighted components drive the final risk score."),
     ("Relocation Planner", "Rank safe shelters, split population and protect shared capacity."),
-    ("Scenario Studio", "Test policy-weight changes without changing the frozen production contract."),
-    ("Live Data Context", "Refresh real-world sources and see LIVE/CACHED/DEMO provenance clearly."),
+    ("System Readiness", "Inspect source health, provenance and candidate production datasets."),
 ]
 for start in range(0, len(module_text), 3):
     row = st.columns(3, gap="large")

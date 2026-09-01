@@ -11,7 +11,6 @@ dependencies:
   - folium
   - plotly
   - scikit-learn
-  - rasterio
   - networkx
   - osmnx
   - reportlab

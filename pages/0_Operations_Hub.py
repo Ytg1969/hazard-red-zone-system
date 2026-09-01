@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from src.live_operations import fetch_operations_snapshot
-from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
+from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -36,16 +36,18 @@ with st.sidebar:
     radius_km = st.slider("Event radius (km)", 100, 1000, 500, 50)
     min_magnitude = st.slider("Minimum earthquake magnitude", 0.0, 6.0, 2.5, 0.5)
     refresh_live = st.button("Refresh live sources", type="primary", width="stretch")
-    st.caption("Refresh is operator-controlled so the portal remains reliable on slow or offline venue networks.")
+    st.caption("Refresh is operator-controlled and independent sources are fetched concurrently for lower latency.")
 
-# Deterministic operational analysis remains available offline.
+# Keep the primary operational view lightweight. Exact GIS exposure is loaded on
+# map/analysis pages; the tabular hazard model itself does not require GeoPandas.
 try:
     habitations_raw, shelters_raw = load_demo_data(city)
-    try:
-        hazards = load_demo_hazards()
-    except Exception:
-        hazards = None
-    habitations = enrich_habitations(habitations_raw, hazard_data=hazards, hazard_type=hazard_profile)
+    habitations = enrich_habitations(
+        habitations_raw,
+        hazard_data=None,
+        hazard_type=hazard_profile,
+        add_coordination_zones=False,
+    )
     shelters = enrich_shelters(shelters_raw)
     summary = calculate_summary(habitations, shelters)
 except Exception as exc:
@@ -53,15 +55,14 @@ except Exception as exc:
     render_disclaimer()
     st.stop()
 
-# Website-like navigation band.
 nav = st.columns(6, gap="small")
 links = [
     ("Command Center", "pages/1_Command_Center.py"),
     ("Red Zone Map", "pages/2_Red_Zone_Map.py"),
     ("Risk Analysis", "pages/3_Risk_Analysis.py"),
     ("Relocation", "pages/4_Relocation_Planner.py"),
-    ("Scenario Studio", "pages/5_Scenario_Studio.py"),
     ("Live Explorer", "pages/7_Live_Data_Context.py"),
+    ("Readiness", "pages/8_System_Readiness.py"),
 ]
 for column, (label, page) in zip(nav, links):
     with column:
@@ -115,7 +116,7 @@ st.markdown("## Real-time source console")
 
 snapshot_key = f"operations_snapshot_{city}_{days}_{radius_km}_{min_magnitude}"
 if refresh_live:
-    with st.spinner("Refreshing weather, air quality, earthquake, disaster-event and official-source context..."):
+    with st.spinner("Refreshing weather, air quality, earthquake, disaster-event and official-source context in parallel..."):
         st.session_state[snapshot_key] = fetch_operations_snapshot(
             city,
             days=days,
@@ -187,7 +188,7 @@ else:
         if not diagnostics.empty:
             diagnostics = diagnostics.astype({"mode": "string"})
             st.dataframe(diagnostics, width="stretch", hide_index=True)
-        st.caption(f"Snapshot generated: {snapshot['generated_at']} UTC")
+        st.caption(f"Snapshot generated: {snapshot['generated_at']}")
         st.warning("Live observations are corroborating evidence only until a verified source-specific calibration is approved for analytical scoring.")
 
 st.divider()
