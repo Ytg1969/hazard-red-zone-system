@@ -6,6 +6,7 @@ pages and future API/service layers while preserving explicit source status.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -52,51 +53,84 @@ def _distance_filter(events: list[dict], latitude: float, longitude: float, radi
     return nearby
 
 
+def _resolve_location(city: str, latitude: float | None, longitude: float | None) -> tuple[float, float]:
+    if latitude is not None and longitude is not None:
+        return float(latitude), float(longitude)
+    if city in CITY_CENTERS:
+        return CITY_CENTERS[city]
+    raise ValueError("latitude and longitude are required for locations outside the bundled reference cities")
+
+
 def fetch_operations_snapshot(
     city: str,
     *,
+    latitude: float | None = None,
+    longitude: float | None = None,
     days: int = 7,
     radius_km: int = 500,
     min_magnitude: float = 2.5,
 ) -> dict:
-    """Fetch an EOC-friendly snapshot for a verified demo-city coordinate.
+    """Fetch an EOC-friendly real-time/context snapshot.
 
-    The result is situational context only. Nothing returned by this function is
-    automatically mapped into H/E/V/A or the baseline risk score.
+    Calls to independent external sources are executed concurrently to avoid
+    serial network latency. The result is situational context only: nothing
+    returned by this function is automatically mapped into H/E/V/A or the
+    baseline risk score.
     """
-    if city not in CITY_CENTERS:
-        raise ValueError(f"operations snapshot requires one of {sorted(CITY_CENTERS)}")
+    latitude, longitude = _resolve_location(city, latitude, longitude)
 
-    latitude, longitude = CITY_CENTERS[city]
-    weather = _safe_call(
-        "Open-Meteo Forecast API",
-        lambda: fetch_weather_at_location(city, latitude, longitude),
-    )
-    air = _safe_call(
-        "Open-Meteo Air Quality API",
-        lambda: fetch_air_quality_at_location(city, latitude, longitude),
-    )
-    usgs = _safe_call(
-        "USGS FDSN Earthquake Catalog",
-        lambda: fetch_recent_earthquakes_at_location(
-            city,
-            latitude,
-            longitude,
-            days=days,
-            radius_km=radius_km,
-            min_magnitude=min_magnitude,
+    calls: dict[str, tuple[str, Callable[[], dict]]] = {
+        "weather": (
+            "Open-Meteo Forecast API",
+            lambda: fetch_weather_at_location(city, latitude, longitude),
         ),
-    )
-    gdacs = _safe_call(
-        "Global Disaster Alert and Coordination System (GDACS)",
-        lambda: fetch_gdacs_events(days=days),
-    )
-    eonet = _safe_call(
-        "NASA Earth Observatory Natural Event Tracker (EONET)",
-        lambda: fetch_eonet_events(days=days, limit=100),
-    )
-    imd = _safe_call("India Meteorological Department (IMD)", lambda: fetch_imd_context(city))
-    sachet = _safe_call("NDMA SACHET", fetch_disaster_alerts)
+        "air_quality": (
+            "Open-Meteo Air Quality API",
+            lambda: fetch_air_quality_at_location(city, latitude, longitude),
+        ),
+        "usgs": (
+            "USGS FDSN Earthquake Catalog",
+            lambda: fetch_recent_earthquakes_at_location(
+                city,
+                latitude,
+                longitude,
+                days=days,
+                radius_km=radius_km,
+                min_magnitude=min_magnitude,
+            ),
+        ),
+        "gdacs": (
+            "Global Disaster Alert and Coordination System (GDACS)",
+            lambda: fetch_gdacs_events(days=days),
+        ),
+        "eonet": (
+            "NASA Earth Observatory Natural Event Tracker (EONET)",
+            lambda: fetch_eonet_events(days=days, limit=100),
+        ),
+        "imd": (
+            "India Meteorological Department (IMD)",
+            lambda: fetch_imd_context(city),
+        ),
+        "sachet": ("NDMA SACHET", fetch_disaster_alerts),
+    }
+
+    sources: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=len(calls), thread_name_prefix="live-source") as executor:
+        future_map = {
+            executor.submit(_safe_call, label, fn): key
+            for key, (label, fn) in calls.items()
+        }
+        for future in as_completed(future_map):
+            key = future_map[future]
+            sources[key] = future.result()
+
+    weather = sources["weather"]
+    air = sources["air_quality"]
+    usgs = sources["usgs"]
+    gdacs = sources["gdacs"]
+    eonet = sources["eonet"]
+    imd = sources["imd"]
+    sachet = sources["sachet"]
 
     gdacs_nearby = _distance_filter(list(gdacs.get("events", [])), latitude, longitude, radius_km)
     eonet_nearby = _distance_filter(list(eonet.get("events", [])), latitude, longitude, radius_km)
@@ -147,15 +181,9 @@ def fetch_operations_snapshot(
         })
     event_register.sort(key=lambda row: float(row.get("distance_km") or 10**9))
 
-    sources = {
-        "weather": weather,
-        "air_quality": air,
-        "usgs": usgs,
-        "gdacs": {**gdacs, "events": gdacs_nearby},
-        "eonet": {**eonet, "events": eonet_nearby},
-        "imd": imd,
-        "sachet": sachet,
-    }
+    sources["gdacs"] = {**gdacs, "events": gdacs_nearby}
+    sources["eonet"] = {**eonet, "events": eonet_nearby}
+
     source_health = []
     for key, source in sources.items():
         source_health.append({
