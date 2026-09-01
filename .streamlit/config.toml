@@ -12,9 +12,12 @@ enableCORS = true
 enableXsrfProtection = true
 maxUploadSize = 50
 
+[runner]
+fastReruns = true
+
 [browser]
 gatherUsageStats = false
 
 [client]
-showErrorDetails = "full"
+showErrorDetails = "stacktrace"
 toolbarMode = "minimal"
