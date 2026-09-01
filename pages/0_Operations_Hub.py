@@ -4,8 +4,8 @@ import pandas as pd
 import streamlit as st
 
 from src.live_operations import fetch_operations_snapshot
-from src.operational_workspace import restore_workspace
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
+from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import (
     inject_global_css,
     render_data_mode_indicator,
@@ -23,18 +23,27 @@ render_page_header(
     "Real-time situational awareness + explainable relocation planning for SIH26191. External context is source-labelled and never silently changes the baseline risk model.",
 )
 
-operational_payload = st.session_state.get("operational_workspace")
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds could not be activated automatically: {exc}")
+
+operational_payload = resolved["payload"] if resolved else None
 with st.sidebar:
     st.subheader("Incident scope")
-    if operational_payload:
+    if resolved:
         scope_label = operational_payload.get("label", "Operational dataset")
         st.success(f"Operational workspace: {scope_label}")
+        if resolved.get("origin") == "configured_feeds":
+            st.caption("Loaded from configured HTTPS feeds · server cache 5 min")
         hazard_profile = st.selectbox(
             "Analytical hazard profile",
             ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
             index=0,
             format_func=lambda value: value.replace("_", " ").title(),
         )
+        st.page_link("pages/9_Operational_Data.py", label="Manage Operational Data", use_container_width=True)
     else:
         city = st.selectbox("Fallback study geography", ["Puri", "Guwahati", "Chennai"], index=0)
         scope_label = city
@@ -53,8 +62,9 @@ with st.sidebar:
     st.caption("Refresh is operator-controlled and independent sources are fetched concurrently for lower latency.")
 
 try:
-    if operational_payload:
-        habitations_raw, shelters_raw = restore_workspace(operational_payload)
+    if resolved:
+        habitations_raw = resolved["habitations"]
+        shelters_raw = resolved["shelters"]
     else:
         habitations_raw, shelters_raw = load_demo_data(city)
     habitations = enrich_habitations(
