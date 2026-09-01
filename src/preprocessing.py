@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -93,11 +94,28 @@ def validate_shelters(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _cache_key(path: str | Path) -> tuple[str, int]:
+    resolved = Path(path).resolve()
+    return str(resolved), resolved.stat().st_mtime_ns
+
+
+@lru_cache(maxsize=16)
+def _load_habitations_cached(path_str: str, _mtime_ns: int) -> pd.DataFrame:
+    return validate_habitations(pd.read_csv(path_str))
+
+
+@lru_cache(maxsize=16)
+def _load_shelters_cached(path_str: str, _mtime_ns: int) -> pd.DataFrame:
+    return validate_shelters(pd.read_csv(path_str))
+
+
 def load_habitations(path="data/processed/habitations.csv") -> pd.DataFrame:
-    df = pd.read_csv(Path(path))
-    return validate_habitations(df)
+    """Load and validate a CSV, reusing unchanged static files across reruns."""
+    path_str, mtime_ns = _cache_key(path)
+    return _load_habitations_cached(path_str, mtime_ns).copy(deep=True)
 
 
 def load_shelters(path="data/processed/shelters.csv") -> pd.DataFrame:
-    df = pd.read_csv(Path(path))
-    return validate_shelters(df)
+    """Load and validate a CSV, reusing unchanged static files across reruns."""
+    path_str, mtime_ns = _cache_key(path)
+    return _load_shelters_cached(path_str, mtime_ns).copy(deep=True)
