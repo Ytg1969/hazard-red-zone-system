@@ -19,10 +19,21 @@ This application is a decision-support prototype being hardened for live operati
 - `SIH_HAZARD_SOURCE_LABEL` — optional human-readable source/layer label for hazard provenance.
 - `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains unconfigured/demo rather than fabricating identifiers.
 - `SIH_ROAD_GRAPHML` — optional local OSM GraphML road-network path. If absent, routing can fall through to OSRM and then explicit straight-line fallback.
+- `SIH_REQUIRE_OPERATIONAL_DATA=true` — strict production mode. When enabled, pages that require habitation/shelter analysis stop instead of falling back to bundled synthetic demo cities if validated operational data is unavailable.
+
+Do not enable `SIH_REQUIRE_OPERATIONAL_DATA=true` until both operational settlement and relocation-site feeds are configured and tested. It is a final cutover switch, not a substitute for real data.
 
 Never place credentials inside the repository. If an authority feed requires authentication, configure credentials through the deployment platform's secret/environment facility and keep the public source documentation/schema in the repository.
 
 No API keys are required by the current Open-Meteo, USGS, GDACS, NASA EONET, OSM or public OSRM integrations. IMD may require client/IP authorization; authorization failures must remain visible and must not be bypassed.
+
+## Dependency profiles
+
+- `requirements.txt` — production/Streamlit Cloud runtime. It excludes test tooling and the optional OSMnx local-graph stack to reduce deployment installation time.
+- `requirements-routing.txt` — production requirements plus OSMnx for local cached GraphML routing.
+- `requirements-dev.txt` — routing bundle plus pytest for local development/testing.
+
+The deployed app still retains the routing fallback chain when OSMnx is absent: live OSRM → cached OSRM → explicit haversine fallback.
 
 ## Streamlit Community Cloud
 
@@ -35,7 +46,7 @@ Deploy:
 - entrypoint: `app.py`
 - Python: `3.12`
 
-The app can be deployed with no secrets for the public/no-key source path. Add only verified operational feed configuration after deployment. Do not add fabricated credentials or URLs.
+The app can initially be deployed with no secrets for public/no-key context and the fallback demonstration path. Add only verified operational feed configuration after deployment. When the real operational dataset and calibrated hazard layer are stable, enable `SIH_REQUIRE_OPERATIONAL_DATA=true` to prevent synthetic fallback on analytical pages.
 
 After deployment, smoke-test these pages in this order:
 
@@ -70,7 +81,7 @@ All three must pass.
 
 `pages/9_Operational_Data.py` is the migration path from bundled demonstration cities to real authority datasets. It supports operator-uploaded CSVs or configured HTTPS CSV feeds plus a calibrated GeoJSON hazard layer. The application validates required fields, coordinates, population/capacity integrity, carrying-capacity evidence and provenance before activation.
 
-Bundled Puri/Guwahati/Chennai records must remain fallback-only until a chosen study area's authoritative habitation, shelter and calibrated hazard inputs can drive every core page. Do not relabel fallback data as real and do not remove it before that end-to-end replacement is tested.
+Bundled Puri/Guwahati/Chennai records must remain fallback-only until a chosen study area's authoritative habitation, shelter and calibrated hazard inputs can drive every core page. Do not relabel fallback data as real. Once the end-to-end replacement is tested, enable strict operational mode and then remove the bundled fallback in a later cleanup release.
 
 ## If a source cannot be fetched directly
 
