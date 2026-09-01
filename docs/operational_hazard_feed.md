@@ -1,20 +1,21 @@
 # Persistent calibrated hazard feed
 
-The deployed application can use an operator-validated GeoJSON hazard layer during a browser session. This tranche extends that path for deployment by supporting a configured HTTPS GeoJSON source when the layer has an approved 0-100 mapping.
+The deployed application can use an operator-validated GeoJSON hazard layer during a browser session. It can also use a configured HTTPS GeoJSON source when the source has a documented 0–100 hazard mapping.
 
-## Required deployment variables
+## Deployment variables
 
 - `SIH_HAZARD_GEOJSON_URL` — HTTPS URL returning a GeoJSON `FeatureCollection`.
-- `SIH_HAZARD_MAPPING_APPROVED=true` — explicit deployment acknowledgement that the source's hazard classes/values have a documented and reviewed mapping to the application's 0-100 hazard scale.
+- `SIH_HAZARD_CALIBRATION_CONFIRMED=true` — explicit deployment acknowledgement that the source's hazard classes/values have a documented and reviewed mapping to the application's 0–100 hazard scale.
+- `SIH_HAZARD_SOURCE_LABEL` — optional human-readable source/layer label shown in provenance.
 
-The application must not use a configured hazard GeoJSON analytically unless the approval flag is true. A reachable URL alone is not evidence of calibration.
+The application must not use a configured hazard GeoJSON analytically unless `SIH_HAZARD_CALIBRATION_CONFIRMED=true`. A reachable URL alone is not evidence of calibration.
 
 ## Feature contract
 
 Every feature must contain:
 
 - a valid geometry;
-- numeric `hazard_score` in the inclusive range 0-100.
+- numeric `hazard_score` in the inclusive range 0–100.
 
 Recommended provenance properties:
 
