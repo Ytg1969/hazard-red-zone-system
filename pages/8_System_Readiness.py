@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from src.data_contracts import assess_habitation_dataset, assess_shelter_dataset
 from src.live_operations import fetch_operations_snapshot
 from src.provenance import default_provenance_register, source_health
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_page_header
@@ -59,6 +60,45 @@ if refresh:
         st.caption("A source failure does not stop the deterministic red-zone, capacity or relocation pipeline.")
 else:
     st.info("Run the health check to inspect current external-source availability and freshness.")
+
+st.divider()
+st.markdown("### Production dataset inspector")
+st.caption(
+    "Inspect candidate operational CSVs before they enter the analytical workflow. This does not certify a source as official; "
+    "it checks schema integrity, provenance fields and carrying-capacity evidence completeness."
+)
+upload_left, upload_right = st.columns(2, gap="large")
+with upload_left:
+    habitation_upload = st.file_uploader("Inspect habitation CSV", type=["csv"], key="readiness_habitations")
+    if habitation_upload is not None:
+        try:
+            habitation_df = pd.read_csv(habitation_upload)
+            assessment = assess_habitation_dataset(habitation_df)
+            if assessment["production_schema_valid"]:
+                st.success(f"Schema valid · {assessment['rows']} row(s)")
+            else:
+                st.error("Schema/data integrity issues detected")
+            st.json(assessment, expanded=False)
+            if assessment["missing_provenance"]:
+                st.warning("Missing recommended provenance fields: " + ", ".join(assessment["missing_provenance"]))
+        except Exception as exc:
+            st.error(f"Could not inspect habitation CSV: {exc}")
+
+with upload_right:
+    shelter_upload = st.file_uploader("Inspect shelter / relocation-site CSV", type=["csv"], key="readiness_shelters")
+    if shelter_upload is not None:
+        try:
+            shelter_df = pd.read_csv(shelter_upload)
+            assessment = assess_shelter_dataset(shelter_df)
+            if assessment["production_schema_valid"]:
+                st.success(f"Schema valid · resource evidence {assessment['resource_completeness_pct']:.0f}%")
+            else:
+                st.error("Schema/data integrity issues detected")
+            st.json(assessment, expanded=False)
+            if assessment["missing_resource_fields"]:
+                st.warning("Missing carrying-capacity evidence: " + ", ".join(assessment["missing_resource_fields"]))
+        except Exception as exc:
+            st.error(f"Could not inspect shelter CSV: {exc}")
 
 st.divider()
 st.markdown("### Data provenance register")
