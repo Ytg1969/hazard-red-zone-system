@@ -9,27 +9,45 @@ from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data, lo
 from src.relocation import allocate_population, rank_shelters
 from src.report_generator import generate_action_plan, generate_action_plan_pdf
 from src.risk_engine import calculate_risk
+from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
 
 st.set_page_config(page_title="Relocation Planner", layout="wide")
 inject_global_css()
 render_page_header("Relocation Planner", "Capacity-safe relocation planning using the active operational workspace or the bundled fallback dataset.")
 
-workspace = st.session_state.get("operational_workspace")
-operational = bool(workspace)
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.warning(f"Configured operational feeds are unavailable: {exc}")
+
+operational = bool(resolved)
+hazard_source = None
 if operational:
+    workspace = resolved["payload"]
     mode = workspace.get("habitation_mode", "UNVERIFIED")
-    render_data_mode_indicator(mode if mode in {"LIVE", "CACHED", "DEMO"} else "DEMO")
+    if mode in {"LIVE", "CACHED", "DEMO"}:
+        render_data_mode_indicator(mode)
+    else:
+        st.warning("Operational workspace provenance is UNVERIFIED.")
     area_label = workspace.get("label", "Operational area")
-    habitations_raw = pd.DataFrame(workspace["habitations"])
-    shelters_raw = pd.DataFrame(workspace["shelters"])
+    habitations_raw = resolved["habitations"]
+    shelters_raw = resolved["shelters"]
     hazard_profile = st.sidebar.selectbox("Analytical hazard profile", ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"], index=0, format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title())
     hazard_data = None
-    if hazard_profile == "stored" and st.session_state.get("operational_hazard_geojson"):
-        hazard_data = geojson_to_gdf(st.session_state["operational_hazard_geojson"])
+    if hazard_profile == "stored":
+        try:
+            hazard_source = resolve_operational_hazard(auto_configured=True)
+            if hazard_source:
+                hazard_data = geojson_to_gdf(hazard_source["geojson"])
+        except Exception as exc:
+            st.error(f"Configured operational hazard layer could not be loaded: {exc}")
+            st.stop()
     st.sidebar.success(f"Operational workspace: {area_label}")
     st.sidebar.page_link("pages/9_Operational_Data.py", label="Manage operational data")
 else:
+    workspace = None
     render_data_mode_indicator("DEMO")
     city, hazard_profile = render_demo_scope_controls("relocation")
     area_label = city
@@ -64,6 +82,8 @@ with m3:
     render_risk_badge(risk["risk_level"])
 m4.metric("Relocation Priority", habitation["relocation_priority"])
 st.caption(f"Operational scope: **{area_label}** · Hazard profile: **{hazard_profile.replace('_', ' ').title()}**")
+if operational and hazard_source:
+    st.caption(f"Calibrated hazard source: **{hazard_source.get('label', 'GeoJSON')}** · {hazard_source.get('mode', 'SESSION')}")
 
 st.markdown("### 2 · Compare safe relocation sites")
 ranked = rank_shelters(habitation, local_shelters.to_dict(orient="records"))
