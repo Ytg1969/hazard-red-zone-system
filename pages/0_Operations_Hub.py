@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from src.live_operations import fetch_operations_snapshot
+from src.operational_workspace import restore_workspace
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
 from src.ui_theme import (
     inject_global_css,
@@ -22,15 +23,28 @@ render_page_header(
     "Real-time situational awareness + explainable relocation planning for SIH26191. External context is source-labelled and never silently changes the baseline risk model.",
 )
 
+operational_payload = st.session_state.get("operational_workspace")
 with st.sidebar:
     st.subheader("Incident scope")
-    city = st.selectbox("Study geography", ["Puri", "Guwahati", "Chennai"], index=0)
-    hazard_profile = st.selectbox(
-        "Analytical hazard profile",
-        ["combined", "flood", "cyclone", "landslide", "earthquake", "drought", "stored"],
-        index=0,
-        format_func=lambda value: value.replace("_", " ").title(),
-    )
+    if operational_payload:
+        scope_label = operational_payload.get("label", "Operational dataset")
+        st.success(f"Operational workspace: {scope_label}")
+        hazard_profile = st.selectbox(
+            "Analytical hazard profile",
+            ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+            index=0,
+            format_func=lambda value: value.replace("_", " ").title(),
+        )
+    else:
+        city = st.selectbox("Fallback study geography", ["Puri", "Guwahati", "Chennai"], index=0)
+        scope_label = city
+        hazard_profile = st.selectbox(
+            "Analytical hazard profile",
+            ["combined", "flood", "cyclone", "landslide", "earthquake", "drought", "stored"],
+            index=0,
+            format_func=lambda value: value.replace("_", " ").title(),
+        )
+        st.caption("Load real datasets in Operational Data to replace this fallback scope.")
     st.subheader("Live context")
     days = st.slider("Look-back window", 1, 30, 7)
     radius_km = st.slider("Event radius (km)", 100, 1000, 500, 50)
@@ -38,10 +52,11 @@ with st.sidebar:
     refresh_live = st.button("Refresh live sources", type="primary", width="stretch")
     st.caption("Refresh is operator-controlled and independent sources are fetched concurrently for lower latency.")
 
-# Keep the primary operational view lightweight. Exact GIS exposure is loaded on
-# map/analysis pages; the tabular hazard model itself does not require GeoPandas.
 try:
-    habitations_raw, shelters_raw = load_demo_data(city)
+    if operational_payload:
+        habitations_raw, shelters_raw = restore_workspace(operational_payload)
+    else:
+        habitations_raw, shelters_raw = load_demo_data(city)
     habitations = enrich_habitations(
         habitations_raw,
         hazard_data=None,
@@ -57,7 +72,7 @@ except Exception as exc:
 
 nav = st.columns(6, gap="small")
 links = [
-    ("Command Center", "pages/1_Command_Center.py"),
+    ("Operational Data", "pages/9_Operational_Data.py"),
     ("Red Zone Map", "pages/2_Red_Zone_Map.py"),
     ("Risk Analysis", "pages/3_Risk_Analysis.py"),
     ("Relocation", "pages/4_Relocation_Planner.py"),
@@ -68,8 +83,9 @@ for column, (label, page) in zip(nav, links):
     with column:
         st.page_link(page, label=label, use_container_width=True)
 
+scope_kind = "operational" if operational_payload else "fallback DEMO"
 st.caption(
-    f"Active analytical scope: **{city}** · **{hazard_profile.title()}** · baseline deterministic risk remains independent from uncalibrated live feeds."
+    f"Active {scope_kind} scope: **{scope_label}** · **{hazard_profile.title()}** · baseline deterministic risk remains independent from uncalibrated live feeds."
 )
 
 render_kpi_strip([
@@ -114,15 +130,22 @@ st.dataframe(habitations[cols].sort_values("risk_score", ascending=False), width
 st.divider()
 st.markdown("## Real-time source console")
 
-snapshot_key = f"operations_snapshot_{city}_{days}_{radius_km}_{min_magnitude}"
+if operational_payload:
+    center = operational_payload["center"]
+    live_kwargs = {
+        "latitude": float(center["latitude"]),
+        "longitude": float(center["longitude"]),
+        "days": days,
+        "radius_km": radius_km,
+        "min_magnitude": min_magnitude,
+    }
+else:
+    live_kwargs = {"days": days, "radius_km": radius_km, "min_magnitude": min_magnitude}
+
+snapshot_key = f"operations_snapshot_{scope_label}_{days}_{radius_km}_{min_magnitude}"
 if refresh_live:
     with st.spinner("Refreshing weather, air quality, earthquake, disaster-event and official-source context in parallel..."):
-        st.session_state[snapshot_key] = fetch_operations_snapshot(
-            city,
-            days=days,
-            radius_km=radius_km,
-            min_magnitude=min_magnitude,
-        )
+        st.session_state[snapshot_key] = fetch_operations_snapshot(scope_label, **live_kwargs)
 
 snapshot = st.session_state.get(snapshot_key)
 if snapshot is None:
@@ -175,10 +198,11 @@ else:
         else:
             event_columns = [c for c in ["source", "type", "event", "magnitude", "distance_km", "time", "url"] if c in events.columns]
             st.dataframe(events[event_columns].head(50), width="stretch", hide_index=True)
+            safe_name = "operational" if operational_payload else str(scope_label).lower().replace(" ", "_")
             st.download_button(
                 "Download live event register",
                 data=events.to_csv(index=False).encode("utf-8"),
-                file_name=f"{city.lower()}_operations_events.csv",
+                file_name=f"{safe_name}_operations_events.csv",
                 mime="text/csv",
                 width="stretch",
             )
@@ -186,7 +210,7 @@ else:
         st.markdown("### Source diagnostics")
         diagnostics = pd.DataFrame(snapshot["source_health"])
         if not diagnostics.empty:
-            diagnostics = diagnostics.astype({"mode": "string"})
+            diagnostics = diagnostics.astype(str)
             st.dataframe(diagnostics, width="stretch", hide_index=True)
         st.caption(f"Snapshot generated: {snapshot['generated_at']}")
         st.warning("Live observations are corroborating evidence only until a verified source-specific calibration is approved for analytical scoring.")

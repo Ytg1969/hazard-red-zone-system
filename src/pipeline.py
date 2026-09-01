@@ -9,17 +9,11 @@ import pandas as pd
 from src.carrying_capacity import calculate_capacity
 from src.coordination_zones import assign_coordination_zones
 from src.hazard_model import SUPPORTED_HAZARDS, compute_hazard_components
-from src.preprocessing import (
-    load_habitations,
-    load_shelters,
-    validate_habitations,
-    validate_shelters,
-)
+from src.preprocessing import load_habitations, load_shelters, validate_habitations, validate_shelters
 from src.relocation import recommend_shelter, relocation_priority
 from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
 from src.spatial_analysis import calculate_hazard_exposure, load_hazard_layer
 from src.vulnerability import calculate_vulnerability
-
 
 DEMO_HABITATIONS = Path("data/demo/habitations.csv")
 DEMO_SHELTERS = Path("data/demo/shelters.csv")
@@ -30,12 +24,7 @@ MULTICITY_HAZARDS = Path("data/demo/multicity_hazards.geojson")
 DEMO_CITIES = ("Puri", "Guwahati", "Chennai")
 
 
-def load_demo_data(
-    city: str | None = None,
-    *,
-    multicity: bool = True,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load the presentation dataset; optional city filtering keeps relocation local."""
+def load_demo_data(city: str | None = None, *, multicity: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     habitation_path = MULTICITY_HABITATIONS if multicity else DEMO_HABITATIONS
     shelter_path = MULTICITY_SHELTERS if multicity else DEMO_SHELTERS
     habitations = load_habitations(habitation_path)
@@ -49,7 +38,6 @@ def load_demo_data(
 
 
 def load_uploaded_habitations(uploaded_file) -> pd.DataFrame:
-    """Validate a user-supplied habitation CSV without inventing missing values."""
     if uploaded_file is None:
         raise ValueError("no habitation upload supplied")
     uploaded_file.seek(0)
@@ -57,7 +45,6 @@ def load_uploaded_habitations(uploaded_file) -> pd.DataFrame:
 
 
 def load_uploaded_shelters(uploaded_file) -> pd.DataFrame:
-    """Validate a user-supplied shelter CSV without inventing missing values."""
     if uploaded_file is None:
         raise ValueError("no shelter upload supplied")
     uploaded_file.seek(0)
@@ -66,8 +53,6 @@ def load_uploaded_shelters(uploaded_file) -> pd.DataFrame:
 
 @lru_cache(maxsize=2)
 def _load_demo_hazards_cached(multicity: bool, path_str: str, mtime_ns: int):
-    # mtime_ns participates in the cache key so local data updates invalidate
-    # the cached GeoDataFrame automatically.
     del multicity, mtime_ns
     return load_hazard_layer(path_str)
 
@@ -79,19 +64,8 @@ def load_demo_hazards(*, multicity: bool = True):
     return cached.copy(deep=True)
 
 
-def enrich_habitations(
-    habitations: pd.DataFrame,
-    weights: dict | None = None,
-    hazard_data=None,
-    hazard_type: str = "combined",
-    *,
-    add_coordination_zones: bool = True,
-) -> pd.DataFrame:
-    """Run GIS exposure → transparent hazard profile → vulnerability → frozen risk model.
-
-    The hazard profile only supplies the 0–100 hazard component. The frozen
-    explainable risk contract and its thresholds/weights remain unchanged.
-    """
+def enrich_habitations(habitations: pd.DataFrame, weights: dict | None = None, hazard_data=None, hazard_type: str = "combined", *, add_coordination_zones: bool = True) -> pd.DataFrame:
+    """Run GIS exposure, hazard modelling, vulnerability and the frozen risk model."""
     weights = weights or DEFAULT_WEIGHTS
     work = habitations.copy()
 
@@ -103,6 +77,7 @@ def enrich_habitations(
             row["inside_hazard_zone"] = spatial.get("inside_hazard_zone")
             row["distance_to_hazard_km"] = spatial.get("distance_to_hazard_km")
             row["gis_hazard_type"] = spatial.get("hazard_type")
+            row["gis_hazard_source"] = spatial.get("hazard_source")
             spatial_rows.append(row)
         work = pd.DataFrame(spatial_rows)
 
@@ -123,26 +98,35 @@ def enrich_habitations(
             work["hazard_data_completeness"] = 0.0
             work["active_hazard_models"] = "Stored hazard score fallback"
     else:
-        work["hazard_profile"] = "stored"
-        work["hazard_data_completeness"] = 100.0
-        work["active_hazard_models"] = "Stored hazard score"
+        if hazard_data is not None and "gis_hazard_score" in work.columns:
+            # Stored/GIS mode is the explicit opt-in path for a calibrated vector
+            # layer. Unknown GIS values fall back to a supplied stored score rather
+            # than being silently converted to zero.
+            gis = pd.to_numeric(work["gis_hazard_score"], errors="coerce")
+            stored = pd.to_numeric(work.get("hazard_score"), errors="coerce") if "hazard_score" in work.columns else pd.Series(index=work.index, dtype=float)
+            work["hazard_score"] = gis.where(gis.notna(), stored)
+            if work["hazard_score"].isna().any():
+                raise ValueError("stored/GIS mode needs either calibrated GIS exposure or a stored hazard_score for every habitation")
+            work["hazard_profile"] = "stored_gis"
+            work["hazard_data_completeness"] = 100.0
+            work["active_hazard_models"] = "Calibrated GIS hazard score"
+        else:
+            work["hazard_profile"] = "stored"
+            work["hazard_data_completeness"] = 100.0
+            work["active_hazard_models"] = "Stored hazard score"
 
     records: list[dict] = []
     for row in work.to_dict(orient="records"):
         vulnerability = calculate_vulnerability(row)
         row.update(vulnerability)
         risk = calculate_risk(row, weights=weights)
-        row.update(
-            {
-                "risk_score": risk["risk_score"],
-                "risk_level": risk["risk_level"],
-                "risk_drivers": ", ".join(risk["drivers"]),
-                "risk_contributions": risk["contributions"],
-                "relocation_priority": relocation_priority(
-                    risk["risk_level"], row["vulnerability_score"]
-                ),
-            }
-        )
+        row.update({
+            "risk_score": risk["risk_score"],
+            "risk_level": risk["risk_level"],
+            "risk_drivers": ", ".join(risk["drivers"]),
+            "risk_contributions": risk["contributions"],
+            "relocation_priority": relocation_priority(risk["risk_level"], row["vulnerability_score"]),
+        })
         records.append(row)
 
     result = pd.DataFrame(records)
@@ -155,13 +139,11 @@ def enrich_shelters(shelters: pd.DataFrame) -> pd.DataFrame:
     records: list[dict] = []
     for row in shelters.to_dict(orient="records"):
         capacity = calculate_capacity(row)
-        row.update(
-            {
-                "effective_capacity": capacity["effective_capacity"],
-                "available_capacity": capacity["available_capacity"],
-                "capacity_validation_status": capacity["capacity_validation_status"],
-            }
-        )
+        row.update({
+            "effective_capacity": capacity["effective_capacity"],
+            "available_capacity": capacity["available_capacity"],
+            "capacity_validation_status": capacity["capacity_validation_status"],
+        })
         records.append(row)
     return pd.DataFrame(records)
 
@@ -173,11 +155,7 @@ def calculate_summary(habitations: pd.DataFrame, shelters: pd.DataFrame) -> dict
         "habitations_monitored": int(len(habitations)),
         "critical_red_zones": int(len(critical)),
         "population_at_risk": int(high_or_critical["population"].sum()),
-        "immediate_relocation_population": int(
-            habitations.loc[
-                habitations["relocation_priority"] == "IMMEDIATE", "population"
-            ].sum()
-        ),
+        "immediate_relocation_population": int(habitations.loc[habitations["relocation_priority"] == "IMMEDIATE", "population"].sum()),
         "available_shelter_capacity": float(shelters["available_capacity"].sum()),
     }
 
