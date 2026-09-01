@@ -1,5 +1,6 @@
 import streamlit as st
 
+from src.operational_workspace import restore_workspace
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
 from src.ui_theme import (
     inject_global_css,
@@ -18,15 +19,40 @@ render_page_header(
     "Multi-Hazard Decision Support System",
     "Emergency Operations Centre | SIH26191 | Situation awareness, explainable risk and capacity-aware relocation planning",
 )
-render_data_mode_indicator("DEMO")
-city, hazard_profile = render_demo_scope_controls("overview")
+
+operational_payload = st.session_state.get("operational_workspace")
+if operational_payload:
+    try:
+        habitations_raw, shelters_raw = restore_workspace(operational_payload)
+        active_label = operational_payload.get("label", "Operational dataset")
+        active_mode = operational_payload.get("habitation_mode", "UNVERIFIED")
+        with st.sidebar:
+            st.success(f"Operational workspace: {active_label}")
+            hazard_profile = st.selectbox(
+                "Analytical hazard profile",
+                ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+                index=0,
+                format_func=lambda value: value.title(),
+                key="overview_operational_hazard",
+            )
+            if st.button("Open Operational Data workspace", width="stretch"):
+                st.switch_page("pages/9_Operational_Data.py")
+        if active_mode in {"LIVE", "CACHED", "DEMO"}:
+            render_data_mode_indicator(active_mode)
+        else:
+            st.warning("Active operational data has unverified provenance.")
+        context_caption = f"Active operational geography: **{active_label}** · Hazard profile: **{hazard_profile.title()}**"
+    except Exception as exc:
+        st.error(f"Active operational workspace is invalid: {exc}")
+        operational_payload = None
+
+if not operational_payload:
+    render_data_mode_indicator("DEMO")
+    city, hazard_profile = render_demo_scope_controls("overview")
+    habitations_raw, shelters_raw = load_demo_data(city)
+    context_caption = f"Fallback geography: **{city}** · Hazard profile: **{hazard_profile.title()}** · synthetic operational DEMO values"
 
 try:
-    # Keep the landing page intentionally lightweight. The hazard profile uses
-    # the tabular indicators directly, so loading GeoPandas/GeoJSON here adds
-    # cold-start latency without changing the profile score. Exact GIS exposure
-    # remains available on the Red Zone Map and analysis pages.
-    habitations_raw, shelters_raw = load_demo_data(city)
     habitations = enrich_habitations(
         habitations_raw,
         hazard_data=None,
@@ -36,11 +62,11 @@ try:
     shelters = enrich_shelters(shelters_raw)
     summary = calculate_summary(habitations, shelters)
 except Exception as exc:
-    st.error(f"The demonstration data could not be prepared: {exc}")
+    st.error(f"The active analytical data could not be prepared: {exc}")
     render_disclaimer()
     st.stop()
 
-st.caption(f"Active geography: **{city}** · Hazard profile: **{hazard_profile.title()}** · Real geography with synthetic operational DEMO values")
+st.caption(context_caption)
 render_kpi_strip([
     ("Habitations Monitored", f"{summary['habitations_monitored']:,}", None),
     ("Critical Red Zones", f"{summary['critical_red_zones']:,}", None),
@@ -57,7 +83,7 @@ with left:
     c1, c2 = st.columns([2.4, 1])
     with c1:
         st.markdown(f"### {top['name']}")
-        st.caption(f"Highest current demonstration risk score: {top['risk_score']:.1f}/100")
+        st.caption(f"Highest current analytical risk score: {top['risk_score']:.1f}/100")
         st.write(f"Population exposed: **{int(top['population']):,}**  |  Relocation priority: **{top['relocation_priority']}**")
         st.write(f"Primary risk drivers: **{top['risk_drivers']}**")
         st.caption(f"Hazard data completeness: {float(top.get('hazard_data_completeness', 0)):.0f}%")
@@ -72,14 +98,17 @@ with left:
 
 with right:
     st.subheader("Operator Next Actions")
-    st.info("Use this sequence during a live briefing. Each module preserves the same city and hazard logic, while live sources remain analytically isolated unless explicitly calibrated.")
+    if operational_payload:
+        st.success("A validated operational workspace is active. The landing page is no longer using bundled demo habitations/shelters for this browser session.")
+    else:
+        st.info("Fallback demo inputs are active. Open **Operational Data** to load authority/field datasets or configured HTTPS feeds.")
     st.markdown(
         """
         **01 — Scope the incident**  
-        Choose the geography and active hazard profile.
+        Choose the operational geography and active hazard profile.
 
         **02 — Verify the red zones**  
-        Open the map, compare analytical footprints with source GIS context, and inspect the highest-risk habitation.
+        Inspect GIS evidence and the highest-risk habitation.
 
         **03 — Explain the score**  
         Review hazard, exposure, vulnerability and evacuation-difficulty contributions.
@@ -91,24 +120,23 @@ with right:
         Generate the draft Markdown/PDF action plan for administrative review.
         """
     )
-    st.success("Core deterministic workflow is offline-ready.")
-    st.caption("Bundled reference cities remain only until authoritative operational habitation/shelter ingestion is complete.")
+    st.success("Core deterministic workflow remains offline-ready.")
 
 st.divider()
 st.subheader("Data & Decision Layers")
 source_cols = st.columns(3, gap="large")
 with source_cols[0]:
-    render_source_card("Deterministic analysis", "Offline-ready", "Risk, capacity, relocation and exports continue without internet access.")
+    render_source_card("Operational workspace", "Upload or HTTPS feed", "Validated authority/field datasets can replace bundled habitation and shelter inputs without changing safety contracts.")
 with source_cols[1]:
-    render_source_card("Verified live context", "Weather · Quakes · Events", "Open-Meteo, USGS and GDACS are source-labelled and kept separate from scoring unless calibrated.")
+    render_source_card("Verified live context", "Weather · Quakes · Events", "Open-Meteo, USGS, GDACS and EONET are source-labelled and kept separate from scoring unless calibrated.")
 with source_cols[2]:
-    render_source_card("Authoritative GIS context", "NRSC / ISRO Bhuvan", "Verified WMS overlays can be shown beside analytical hazard footprints without silently changing the score.")
+    render_source_card("Authoritative GIS context", "NRSC / ISRO Bhuvan", "Verified WMS overlays can be shown beside analytical hazard evidence without silently changing the score.")
 
 st.divider()
 st.subheader("Operational Modules")
 module_text = [
+    ("Operational Data", "Load real habitation/shelter datasets or configured HTTPS feeds."),
     ("Operations Hub", "Refresh live context on demand while deterministic planning stays available offline."),
-    ("Command Center", "Monitor incident context, exposure, alerts and capacity status."),
     ("Red Zone Map", "Inspect risk, Bhuvan context, shelter destination and evacuation route."),
     ("Risk Analysis", "See exactly which weighted components drive the final risk score."),
     ("Relocation Planner", "Rank safe shelters, split population and protect shared capacity."),
