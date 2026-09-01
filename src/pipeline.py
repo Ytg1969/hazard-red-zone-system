@@ -1,6 +1,7 @@
 """Shared end-to-end orchestration for the SIH26191 application."""
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -63,8 +64,19 @@ def load_uploaded_shelters(uploaded_file) -> pd.DataFrame:
     return validate_shelters(pd.read_csv(uploaded_file))
 
 
+@lru_cache(maxsize=2)
+def _load_demo_hazards_cached(multicity: bool, path_str: str, mtime_ns: int):
+    # mtime_ns participates in the cache key so local data updates invalidate
+    # the cached GeoDataFrame automatically.
+    del multicity, mtime_ns
+    return load_hazard_layer(path_str)
+
+
 def load_demo_hazards(*, multicity: bool = True):
-    return load_hazard_layer(MULTICITY_HAZARDS if multicity else DEMO_HAZARDS)
+    path = MULTICITY_HAZARDS if multicity else DEMO_HAZARDS
+    resolved = path.resolve()
+    cached = _load_demo_hazards_cached(multicity, str(resolved), resolved.stat().st_mtime_ns)
+    return cached.copy(deep=True)
 
 
 def enrich_habitations(
