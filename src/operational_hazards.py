@@ -84,7 +84,10 @@ def fetch_configured_hazard(
     source_url = validate_public_https_url(url or configured["url"] or "", purpose="configured hazard")
     confirmed = configured["calibration_confirmed"] if calibration_confirmed is None else bool(calibration_confirmed)
     if not confirmed:
-        raise ValueError("configured hazard feed is blocked until its hazard_score calibration is explicitly confirmed")
+        raise ValueError(
+            "configured hazard feed is blocked until SIH_HAZARD_CALIBRATION_CONFIRMED=true "
+            "or equivalent explicit session confirmation is provided"
+        )
 
     label = str(source_label or configured["label"])
     resolved_cache = Path(cache_path) if cache_path is not None else _hazard_cache_path(source_url)
