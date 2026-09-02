@@ -1,4 +1,10 @@
-from src.ogc_sources import build_wms_capabilities_url, parse_wms_capabilities
+from src.ogc_sources import (
+    build_wfs_capabilities_url,
+    build_wfs_geojson_url,
+    build_wms_capabilities_url,
+    parse_wfs_capabilities,
+    parse_wms_capabilities,
+)
 
 
 SAMPLE_WMS = """<?xml version='1.0' encoding='UTF-8'?>
@@ -32,6 +38,29 @@ SAMPLE_WMS = """<?xml version='1.0' encoding='UTF-8'?>
     </Layer>
   </Capability>
 </WMS_Capabilities>
+"""
+
+SAMPLE_WFS = """<?xml version='1.0' encoding='UTF-8'?>
+<wfs:WFS_Capabilities version='2.0.0'
+  xmlns:wfs='http://www.opengis.net/wfs/2.0'
+  xmlns:ows='http://www.opengis.net/ows/1.1'>
+  <ows:ServiceIdentification>
+    <ows:Title>Authority Feature Service</ows:Title>
+    <ows:Abstract>Official vector feature service.</ows:Abstract>
+  </ows:ServiceIdentification>
+  <wfs:FeatureTypeList>
+    <wfs:FeatureType>
+      <wfs:Name>haz:flood</wfs:Name>
+      <wfs:Title>Flood Hazard</wfs:Title>
+      <wfs:Abstract>Flood classes.</wfs:Abstract>
+      <wfs:DefaultCRS>urn:ogc:def:crs:EPSG::4326</wfs:DefaultCRS>
+      <ows:WGS84BoundingBox>
+        <ows:LowerCorner>76 10</ows:LowerCorner>
+        <ows:UpperCorner>78 12</ows:UpperCorner>
+      </ows:WGS84BoundingBox>
+    </wfs:FeatureType>
+  </wfs:FeatureTypeList>
+</wfs:WFS_Capabilities>
 """
 
 
@@ -71,3 +100,45 @@ def test_parse_wms_capabilities_rejects_non_wms_xml():
         assert "unexpected WMS" in str(exc)
     else:
         raise AssertionError("Non-WMS XML should be rejected")
+
+
+def test_build_wfs_capabilities_url_preserves_vendor_query():
+    url = build_wfs_capabilities_url("https://example.gov.in/geoserver/wfs?token=public&request=GetFeature")
+    assert "token=public" in url
+    assert "service=WFS" in url
+    assert "request=GetCapabilities" in url
+    assert "GetFeature" not in url
+
+
+def test_parse_wfs_capabilities_extracts_feature_types_and_bbox():
+    parsed = parse_wfs_capabilities(SAMPLE_WFS)
+    assert parsed["version"] == "2.0.0"
+    assert parsed["service_title"] == "Authority Feature Service"
+    assert parsed["feature_type_count"] == 1
+    feature = parsed["feature_types"][0]
+    assert feature["name"] == "haz:flood"
+    assert feature["geographic_bbox"] == {"west": 76.0, "south": 10.0, "east": 78.0, "north": 12.0}
+    assert "EPSG::4326" in feature["crs"][0]
+
+
+def test_parse_wfs_capabilities_rejects_non_wfs_xml():
+    try:
+        parse_wfs_capabilities("<root><FeatureType><Name>x</Name></FeatureType></root>")
+    except ValueError as exc:
+        assert "unexpected WFS" in str(exc)
+    else:
+        raise AssertionError("Non-WFS XML should be rejected")
+
+
+def test_build_wfs_geojson_url_is_explicit_and_bounded():
+    url = build_wfs_geojson_url(
+        "https://example.gov.in/geoserver/wfs?token=public",
+        "haz:flood",
+        count=500,
+    )
+    assert "token=public" in url
+    assert "service=WFS" in url
+    assert "request=GetFeature" in url
+    assert "typeNames=haz%3Aflood" in url
+    assert "outputFormat=application%2Fjson" in url
+    assert "count=500" in url
