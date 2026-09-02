@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from src.live_operations import fetch_operations_snapshot
+from src.operational_file_ingest import read_operational_upload
 from src.operational_hazards import configured_hazard_source, geojson_to_gdf, validate_geojson_hazard
 from src.operational_sources import configured_operational_urls, fetch_operational_habitations, fetch_operational_shelters
 from src.operational_workspace import normalize_operational_habitations, normalize_operational_shelters, serialize_workspace
@@ -48,15 +49,16 @@ source_mode = st.segmented_control("Settlement/site source", ["Current / configu
 label = st.text_input("Operational area label", placeholder="e.g. Wayanad District, Kerala")
 
 if source_mode == "Upload files":
+    st.caption("Accepted settlement/site uploads: CSV or Point GeoJSON/JSON. GeoJSON Point geometry supplies latitude/longitude automatically.")
     left, right = st.columns(2, gap="large")
     with left:
-        habitation_upload = st.file_uploader("Habitation / settlement CSV", type=["csv"], key="ops_hab")
+        habitation_upload = st.file_uploader("Habitation / settlement dataset", type=["csv", "geojson", "json"], key="ops_hab")
     with right:
-        shelter_upload = st.file_uploader("Shelter / relocation-site CSV", type=["csv"], key="ops_shelter")
+        shelter_upload = st.file_uploader("Shelter / relocation-site dataset", type=["csv", "geojson", "json"], key="ops_shelter")
     if st.button("Validate and activate uploaded workspace", type="primary", width="stretch", disabled=not (habitation_upload and shelter_upload)):
         try:
-            habitations_raw, h_assessment = normalize_operational_habitations(pd.read_csv(habitation_upload))
-            shelters_raw, s_assessment = normalize_operational_shelters(pd.read_csv(shelter_upload))
+            habitations_raw, h_assessment = normalize_operational_habitations(read_operational_upload(habitation_upload))
+            shelters_raw, s_assessment = normalize_operational_shelters(read_operational_upload(shelter_upload))
             st.session_state["operational_workspace"] = serialize_workspace(habitations_raw, shelters_raw, label=label or "Operational upload")
             st.session_state["operational_habitation_assessment"] = h_assessment
             st.session_state["operational_shelter_assessment"] = s_assessment
