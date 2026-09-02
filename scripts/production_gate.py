@@ -27,6 +27,7 @@ REQUIRED_PAGES = [
     "pages/8_System_Readiness.py",
     "pages/9_Operational_Data.py",
     "pages/10_GIS_Source_Inspector.py",
+    "pages/11_Calibrated_Hazard_Source.py",
 ]
 
 _WMS_SAMPLE = """<WMS_Capabilities version='1.3.0' xmlns='http://www.opengis.net/wms'>
