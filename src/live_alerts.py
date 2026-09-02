@@ -4,6 +4,9 @@ Configure a verified public CAP/RSS feed through SIH_SACHET_FEED_URL before
 presenting the source as LIVE. The NDMA SACHET integration guide requires ETag
 revalidation for CAP XML; the shared live-data layer follows that behavior and
 uses a confirmed-current cache on HTTP 304.
+
+When no verified feed is configured, this adapter returns an explicit empty
+UNCONFIGURED state rather than fabricating demonstration alerts.
 """
 from __future__ import annotations
 
@@ -17,27 +20,6 @@ from src.live_data import DataEnvelope, demo_envelope, fetch_text_with_etag_cach
 FEED_URL_ENV_VAR = "SIH_SACHET_FEED_URL"
 DEFAULT_CACHE_PATH = "data/cache/alerts/sachet_latest.json"
 CAP_NAMESPACE = {"cap": "urn:oasis:names:tc:emergency:cap:1.2"}
-
-_DEMO_ALERTS = [
-    {
-        "event": "Flood Warning (demonstration)",
-        "severity": "Severe",
-        "urgency": "Expected",
-        "area": "Demonstration district",
-        "headline": "Illustrative alert used to demonstrate how an official CAP/RSS warning would appear.",
-        "published": None,
-        "link": None,
-    },
-    {
-        "event": "Heavy Rainfall Advisory (demonstration)",
-        "severity": "Moderate",
-        "urgency": "Expected",
-        "area": "Demonstration district",
-        "headline": "No verified live alert feed is configured; this row is synthetic UI fallback content.",
-        "published": None,
-        "link": None,
-    },
-]
 
 
 def parse_cap_alerts(xml_text: str) -> list[dict]:
@@ -121,21 +103,40 @@ def fetch_disaster_alerts(
     """Fetch optional alerts while preserving explicit source-mode semantics."""
     feed_url = feed_url or os.getenv(FEED_URL_ENV_VAR)
     if not feed_url:
-        envelope = demo_envelope("NDMA SACHET-compatible alert UI (verified feed not configured)", _DEMO_ALERTS)
-        return {**_envelope_summary(envelope), "alerts": _DEMO_ALERTS}
+        envelope = demo_envelope("NDMA SACHET (verified feed not configured)", [])
+        return {
+            **_envelope_summary(envelope),
+            "alerts": [],
+            "access_status": "UNCONFIGURED",
+            "error": "SIH_SACHET_FEED_URL is not configured with a verified CAP/RSS feed.",
+        }
+
+    if not str(feed_url).lower().startswith("https://"):
+        envelope = demo_envelope("NDMA SACHET (invalid feed configuration)", [])
+        return {
+            **_envelope_summary(envelope),
+            "alerts": [],
+            "access_status": "INVALID_CONFIGURATION",
+            "error": "SACHET feed URL must use HTTPS.",
+        }
 
     try:
         envelope = fetch_text_with_etag_cache(
-            source="Configured disaster alert feed",
+            source="Configured NDMA SACHET-compatible disaster alert feed",
             url=feed_url,
             cache_path=cache_path,
         )
         alerts = parse_alert_feed(str(envelope.payload))
-        return {**_envelope_summary(envelope), "alerts": alerts}
-    except Exception as exc:
-        envelope = demo_envelope("Disaster alert feed unavailable", _DEMO_ALERTS)
         return {
             **_envelope_summary(envelope),
-            "alerts": _DEMO_ALERTS,
+            "alerts": alerts,
+            "access_status": "AVAILABLE",
+        }
+    except Exception as exc:
+        envelope = demo_envelope("NDMA SACHET feed unavailable", [])
+        return {
+            **_envelope_summary(envelope),
+            "alerts": [],
+            "access_status": "UNAVAILABLE",
             "error": str(exc),
         }

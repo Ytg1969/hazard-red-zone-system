@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.live_alerts import fetch_disaster_alerts
+from src.ogc_sources import parse_wms_capabilities
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
 from src.provenance import default_provenance_register
 from src.risk_engine import DEFAULT_WEIGHTS
@@ -24,7 +26,13 @@ REQUIRED_PAGES = [
     "pages/7_Live_Data_Context.py",
     "pages/8_System_Readiness.py",
     "pages/9_Operational_Data.py",
+    "pages/10_GIS_Source_Inspector.py",
 ]
+
+_WMS_SAMPLE = """<WMS_Capabilities version='1.3.0' xmlns='http://www.opengis.net/wms'>
+<Service><Title>Gate WMS</Title></Service><Capability><Layer><Title>Root</Title>
+<Layer><Name>hazard</Name><Title>Hazard</Title><CRS>EPSG:4326</CRS></Layer>
+</Layer></Capability></WMS_Capabilities>"""
 
 
 def run_gate() -> dict:
@@ -64,6 +72,25 @@ def run_gate() -> dict:
     result["checks"]["live_context_isolation"] = {
         "pass": not external_risk_mutators,
         "violations": external_risk_mutators,
+    }
+
+    parsed_wms = parse_wms_capabilities(_WMS_SAMPLE)
+    result["checks"]["ogc_discovery_parser"] = {
+        "pass": parsed_wms.get("layer_count") == 1 and parsed_wms["layers"][0]["name"] == "hazard",
+        "layer_count": parsed_wms.get("layer_count"),
+    }
+
+    # Ensure an unconfigured official-alert source does not fabricate current-looking rows.
+    import os
+    previous = os.environ.pop("SIH_SACHET_FEED_URL", None)
+    try:
+        sachet = fetch_disaster_alerts()
+    finally:
+        if previous is not None:
+            os.environ["SIH_SACHET_FEED_URL"] = previous
+    result["checks"]["sachet_unconfigured_is_empty"] = {
+        "pass": sachet.get("access_status") == "UNCONFIGURED" and sachet.get("alerts") == [],
+        "access_status": sachet.get("access_status"),
     }
 
     result["production_ready_offline"] = all(check["pass"] for check in result["checks"].values())
