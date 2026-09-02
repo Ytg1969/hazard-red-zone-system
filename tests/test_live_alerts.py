@@ -47,9 +47,16 @@ def test_parse_alert_feed_handles_malformed_input():
     assert parse_alert_feed("not xml") == []
 
 
-def test_alert_adapter_defaults_to_explicit_demo_mode(monkeypatch):
+def test_alert_adapter_defaults_to_empty_unconfigured_state(monkeypatch):
     monkeypatch.delenv("SIH_SACHET_FEED_URL", raising=False)
     result = fetch_disaster_alerts()
     assert result["mode"] == "DEMO"
-    assert result["alerts"]
-    assert all("demonstration" in row["event"].lower() for row in result["alerts"])
+    assert result["alerts"] == []
+    assert result["access_status"] == "UNCONFIGURED"
+    assert "SIH_SACHET_FEED_URL" in result["error"]
+
+
+def test_alert_adapter_rejects_non_https_feed():
+    result = fetch_disaster_alerts("http://example.gov.in/feed.xml")
+    assert result["alerts"] == []
+    assert result["access_status"] == "INVALID_CONFIGURATION"
