@@ -38,3 +38,6 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests -q
+
+      - name: Run deterministic demo gate
+        run: python scripts/demo_gate.py
