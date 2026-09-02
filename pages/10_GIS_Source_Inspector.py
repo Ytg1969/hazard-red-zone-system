@@ -2,14 +2,14 @@ import pandas as pd
 import streamlit as st
 
 from src.arcgis_sources import geojson_query_url, inspect_arcgis_source, layer_url
-from src.ogc_sources import inspect_wms_source
+from src.ogc_sources import build_wfs_geojson_url, inspect_wfs_source, inspect_wms_source
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_page_header
 
 st.set_page_config(page_title="GIS Source Inspector", page_icon="GIS", layout="wide")
 inject_global_css()
 render_page_header(
     "GIS Source Inspector",
-    "Discover authority WMS and ArcGIS REST layers while preserving provenance and calibration boundaries.",
+    "Discover authority WMS, WFS and ArcGIS REST layers while preserving provenance and calibration boundaries.",
 )
 
 st.info(
@@ -17,7 +17,7 @@ st.info(
     "Reachability alone never makes a layer an analytical risk input: legend/classes, reference period, CRS, coverage and the class-to-0–100 mapping must still be documented."
 )
 
-wms_tab, arcgis_tab = st.tabs(["OGC WMS", "ArcGIS REST"])
+wms_tab, wfs_tab, arcgis_tab = st.tabs(["OGC WMS", "OGC WFS", "ArcGIS REST"])
 
 with wms_tab:
     with st.container(border=True):
@@ -85,6 +85,71 @@ with wms_tab:
 
                 st.warning(
                     "The WMS inspector does not activate this layer as H. Once calibration is documented, convert/export the geometry to the calibrated operational GeoJSON contract or add a reviewed source-specific adapter."
+                )
+
+with wfs_tab:
+    with st.container(border=True):
+        st.markdown("### Inspect a WFS feature service")
+        wfs_url = st.text_input(
+            "WFS service URL",
+            placeholder="https://agency.example.gov.in/geoserver/workspace/wfs",
+            help="HTTPS only. The inspector requests GetCapabilities but does not automatically download bulk features.",
+            key="gis_wfs_url",
+        )
+        wfs_inspect = st.button("Fetch WFS capabilities", type="primary", width="stretch", disabled=not wfs_url.strip())
+
+    if wfs_inspect:
+        try:
+            with st.spinner("Fetching WFS capabilities..."):
+                st.session_state["wfs_inspection"] = inspect_wfs_source(wfs_url.strip())
+                st.session_state["wfs_base_url"] = wfs_url.strip()
+        except Exception as exc:
+            st.session_state.pop("wfs_inspection", None)
+            st.error(f"WFS inspection failed: {exc}")
+
+    wfs = st.session_state.get("wfs_inspection")
+    if wfs:
+        meta = st.columns(5)
+        meta[0].metric("Service", wfs.get("service_title") or "WFS")
+        meta[1].metric("Version", wfs.get("version") or "Unknown")
+        meta[2].metric("Feature types", int(wfs.get("feature_type_count") or 0))
+        meta[3].metric("Mode", wfs.get("mode") or "Unknown")
+        meta[4].metric("Stale", "Yes" if wfs.get("stale") else "No")
+        if wfs.get("mode") in {"LIVE", "CACHED", "DEMO"}:
+            render_data_mode_indicator(wfs["mode"])
+
+        st.caption(f"Capabilities URL: `{wfs.get('source_url')}`")
+        if wfs.get("service_abstract"):
+            st.write(wfs["service_abstract"])
+
+        feature_types = pd.DataFrame(wfs.get("feature_types", []))
+        if not feature_types.empty:
+            feature_types["crs"] = feature_types["crs"].apply(lambda values: ", ".join(values) if isinstance(values, list) else str(values))
+            feature_types["geographic_bbox"] = feature_types["geographic_bbox"].astype(str)
+            search = st.text_input("Filter WFS feature types", placeholder="flood, landslide, village, shelter...")
+            shown = feature_types
+            if search.strip():
+                needle = search.strip().lower()
+                mask = feature_types.astype(str).apply(lambda col: col.str.lower().str.contains(needle, regex=False)).any(axis=1)
+                shown = feature_types[mask]
+            st.dataframe(shown, width="stretch", hide_index=True)
+
+            names = shown["name"].astype(str).tolist()
+            if names:
+                selected = st.selectbox("Selected WFS feature type", names)
+                row = shown.loc[shown["name"].astype(str) == selected].iloc[0]
+                base = st.session_state.get("wfs_base_url", "")
+                st.write(f"**Title:** {row.get('title')}")
+                st.write(f"**Advertised CRS:** {row.get('crs') or 'Not stated'}")
+                if base:
+                    st.markdown("#### Bounded GeoJSON query template")
+                    st.code(build_wfs_geojson_url(base, selected, count=1000), language=None)
+                    st.caption(
+                        "This template requests at most 1,000 features. Verify service limits, pagination, licensing and field semantics before using it as an operational feed."
+                    )
+
+                st.warning(
+                    "A WFS vector response may be suitable for ingestion, but hazard features still require documented legend/class calibration before they may supply H. Settlement/site features must satisfy the operational schema and provenance validators."
                 )
 
 with arcgis_tab:
@@ -169,7 +234,7 @@ blockers = pd.DataFrame([
     {"Source": "IMD", "Status": "Authorization dependent", "What is needed": "Approved API endpoints + auth method + redacted sample response"},
     {"Source": "NDMA SACHET", "Status": "Portal verified; feed mapping pending", "What is needed": "Verified RSS/CAP identifier/feed URL or representative feed sample"},
     {"Source": "Shelter inventories", "Status": "No single national live capacity feed verified", "What is needed": "State/district CSV/XLSX/GeoJSON/API with coordinates + capacity/occupancy/infrastructure"},
-    {"Source": "Hazard GIS", "Status": "WMS + ArcGIS discovery supported", "What is needed": "Exact layer + legend/classes + reference period + calibrated mapping"},
+    {"Source": "Hazard GIS", "Status": "WMS/WFS/ArcGIS discovery supported", "What is needed": "Exact layer + legend/classes + reference period + calibrated mapping"},
 ])
 st.dataframe(blockers, width="stretch", hide_index=True)
 
