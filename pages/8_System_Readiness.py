@@ -3,7 +3,9 @@ import streamlit as st
 
 from src.data_contracts import assess_habitation_dataset, assess_shelter_dataset
 from src.live_operations import fetch_operations_snapshot
+from src.location_context import search_locations
 from src.provenance import default_provenance_register, source_health
+from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_page_header
 
 st.set_page_config(page_title="System Readiness", page_icon="OPS", layout="wide")
@@ -26,12 +28,58 @@ with right:
 
 st.divider()
 st.markdown("### Source health check")
-city = st.selectbox("Operational location", ["Puri", "Guwahati", "Chennai"], index=0)
-refresh = st.button("Run source health check", type="primary", width="stretch")
 
-if refresh:
-    with st.spinner("Checking live and official context sources..."):
-        snapshot = fetch_operations_snapshot(city)
+resolved = None
+try:
+    resolved = resolve_operational_workspace(auto_configured=True)
+except Exception as exc:
+    st.caption(f"Operational workspace is not currently available: {exc}")
+
+location = None
+if resolved:
+    payload = resolved["payload"]
+    center = payload.get("center") or {}
+    if center.get("latitude") is not None and center.get("longitude") is not None:
+        location = {
+            "name": str(payload.get("label") or "Operational area"),
+            "label": str(payload.get("label") or "Operational area"),
+            "latitude": float(center["latitude"]),
+            "longitude": float(center["longitude"]),
+        }
+        st.success(f"Health-check geography: active operational workspace · {location['label']}")
+
+with st.expander("Use a different location", expanded=location is None):
+    query = st.text_input("Search location", placeholder="e.g. Wayanad, Kerala or Guwahati, Assam")
+    if st.button("Resolve location", width="stretch", disabled=not query.strip()):
+        try:
+            result = search_locations(query.strip(), count=10)
+            st.session_state["readiness_location_results"] = result.get("results", [])
+        except Exception as exc:
+            st.session_state["readiness_location_results"] = []
+            st.error(f"Location search failed: {exc}")
+    candidates = st.session_state.get("readiness_location_results", [])
+    if candidates:
+        labels = [item["label"] for item in candidates]
+        chosen = st.selectbox("Matching location", labels, key="readiness_location_choice")
+        manual = next(item for item in candidates if item["label"] == chosen)
+        if st.button("Use this location", width="stretch"):
+            st.session_state["readiness_manual_location"] = manual
+            st.rerun()
+
+manual_location = st.session_state.get("readiness_manual_location")
+if manual_location:
+    location = manual_location
+    st.caption(f"Manual health-check geography: {location['label']}")
+
+refresh = st.button("Run source health check", type="primary", width="stretch", disabled=location is None)
+
+if refresh and location:
+    with st.spinner("Checking live and official context sources concurrently..."):
+        snapshot = fetch_operations_snapshot(
+            str(location.get("label") or location.get("name") or "Operational area"),
+            latitude=float(location["latitude"]),
+            longitude=float(location["longitude"]),
+        )
     rows = []
     for label, source in snapshot.get("sources", {}).items():
         health = source_health(source)
@@ -55,9 +103,11 @@ if refresh:
         c1.metric("Sources Checked", len(health_df))
         c2.metric("Healthy", healthy)
         c3.metric("Degraded / Stale", degraded)
-        c4.metric("Demo-only", demo_only)
-        st.dataframe(health_df, width="stretch", hide_index=True)
+        c4.metric("Unavailable / unconfigured", demo_only)
+        st.dataframe(health_df.astype(str), width="stretch", hide_index=True)
         st.caption("A source failure does not stop the deterministic red-zone, capacity or relocation pipeline.")
+elif location is None:
+    st.info("Activate operational data or resolve a location before running source-health checks.")
 else:
     st.info("Run the health check to inspect current external-source availability and freshness.")
 
@@ -120,10 +170,11 @@ gates = [
     ("Capacity protection", "READY", "Shared capacity accounting prevents over-allocation."),
     ("Route provenance", "READY", "Local OSM → live OSRM → cached OSRM → straight-line fallback is explicit."),
     ("Live source isolation", "READY", "External context is CONTEXT_ONLY until source-specific calibration exists."),
+    ("Operational-data strict mode", "READY", "SIH_REQUIRE_OPERATIONAL_DATA can disable synthetic analytical fallback after real feeds are validated."),
     ("Authoritative national habitations", "PENDING", "Requires validated government production feeds or curated official datasets."),
-    ("Bhuvan numeric calibration", "PENDING", "Layer classes, legend, reference period and 0–100 mapping must be validated."),
-    ("IMD direct API access", "CONDITIONAL", "Official endpoint may require client/IP authorization."),
-    ("NDMA SACHET production feed", "CONDITIONAL", "Requires a verified configured feed URL/identifier."),
+    ("Bhuvan / authority GIS numeric calibration", "PENDING", "Layer classes, legend, reference period and 0–100 mapping must be validated."),
+    ("IMD direct API access", "CONDITIONAL", "Official endpoint may require account/client/IP authorization."),
+    ("NDMA SACHET production feed", "CONDITIONAL", "Portal and CAP integration method are verified; exact subscribed feed/identifier mapping is still required."),
 ]
 for title, state, detail in gates:
     with st.container(border=True):
