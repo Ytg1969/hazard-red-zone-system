@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import xml.etree.ElementTree as ET
 
 from src.live_data import fetch_text_with_cache
+from src.url_safety import validate_public_https_url
 
 DEFAULT_CACHE_DIR = Path("data/cache/ogc")
 
@@ -30,10 +31,8 @@ def _child_text(node: ET.Element, name: str) -> str | None:
 
 
 def _capabilities_url(base_url: str, service: str) -> str:
-    raw = str(base_url or "").strip()
+    raw = validate_public_https_url(base_url, purpose=f"{service} source")
     parsed = urlsplit(raw)
-    if parsed.scheme.lower() != "https" or not parsed.netloc:
-        raise ValueError(f"{service} source must be an absolute HTTPS URL")
     params = dict(parse_qsl(parsed.query, keep_blank_values=True))
     params = {k: v for k, v in params.items() if k.lower() not in {"service", "request"}}
     params.update({"service": service, "request": "GetCapabilities"})
@@ -53,22 +52,18 @@ def parse_wms_capabilities(xml_text: str) -> dict:
         root = ET.fromstring(xml_text)
     except Exception as exc:
         raise ValueError("WMS capabilities response is not valid XML") from exc
-
     root_name = _local(root.tag)
     if root_name not in {"WMS_Capabilities", "WMT_MS_Capabilities"}:
         raise ValueError(f"unexpected WMS capabilities root: {root_name}")
-
     version = root.attrib.get("version")
     service_title = None
     service_abstract = None
     layers: list[dict] = []
-
     for node in root.iter():
         if _local(node.tag) == "Service":
             service_title = _child_text(node, "Title") or service_title
             service_abstract = _child_text(node, "Abstract") or service_abstract
             break
-
     for node in root.iter():
         if _local(node.tag) != "Layer":
             continue
@@ -93,29 +88,11 @@ def parse_wms_capabilities(xml_text: str) -> dict:
                             pass
                 required = {"westBoundLongitude", "eastBoundLongitude", "southBoundLatitude", "northBoundLatitude"}
                 if required.issubset(values):
-                    bbox = {
-                        "west": values["westBoundLongitude"],
-                        "east": values["eastBoundLongitude"],
-                        "south": values["southBoundLatitude"],
-                        "north": values["northBoundLatitude"],
-                    }
-        layers.append({
-            "name": name,
-            "title": title,
-            "abstract": abstract,
-            "crs": sorted(set(crs)),
-            "geographic_bbox": bbox,
-        })
-
+                    bbox = {"west": values["westBoundLongitude"], "east": values["eastBoundLongitude"], "south": values["southBoundLatitude"], "north": values["northBoundLatitude"]}
+        layers.append({"name": name, "title": title, "abstract": abstract, "crs": sorted(set(crs)), "geographic_bbox": bbox})
     if not layers:
         raise ValueError("WMS capabilities contains no named layers")
-    return {
-        "version": version,
-        "service_title": service_title or "WMS service",
-        "service_abstract": service_abstract,
-        "layers": layers,
-        "layer_count": len(layers),
-    }
+    return {"version": version, "service_title": service_title or "WMS service", "service_abstract": service_abstract, "layers": layers, "layer_count": len(layers)}
 
 
 def parse_wfs_capabilities(xml_text: str) -> dict:
@@ -123,24 +100,19 @@ def parse_wfs_capabilities(xml_text: str) -> dict:
         root = ET.fromstring(xml_text)
     except Exception as exc:
         raise ValueError("WFS capabilities response is not valid XML") from exc
-
     root_name = _local(root.tag)
     if root_name != "WFS_Capabilities":
         raise ValueError(f"unexpected WFS capabilities root: {root_name}")
-
     version = root.attrib.get("version")
     service_title = None
     service_abstract = None
     feature_types: list[dict] = []
-
     for node in root.iter():
-        local = _local(node.tag)
-        if local in {"ServiceIdentification", "Service"}:
+        if _local(node.tag) in {"ServiceIdentification", "Service"}:
             service_title = _child_text(node, "Title") or service_title
             service_abstract = _child_text(node, "Abstract") or service_abstract
             if service_title:
                 break
-
     for node in root.iter():
         if _local(node.tag) != "FeatureType":
             continue
@@ -167,23 +139,10 @@ def parse_wfs_capabilities(xml_text: str) -> dict:
                 except Exception:
                     bbox = None
         crs = [value for value in [default_crs, *other_crs] if value]
-        feature_types.append({
-            "name": name,
-            "title": title,
-            "abstract": abstract,
-            "crs": sorted(set(crs)),
-            "geographic_bbox": bbox,
-        })
-
+        feature_types.append({"name": name, "title": title, "abstract": abstract, "crs": sorted(set(crs)), "geographic_bbox": bbox})
     if not feature_types:
         raise ValueError("WFS capabilities contains no named feature types")
-    return {
-        "version": version,
-        "service_title": service_title or "WFS service",
-        "service_abstract": service_abstract,
-        "feature_types": feature_types,
-        "feature_type_count": len(feature_types),
-    }
+    return {"version": version, "service_title": service_title or "WFS service", "service_abstract": service_abstract, "feature_types": feature_types, "feature_type_count": len(feature_types)}
 
 
 def _cache_path(url: str, prefix: str) -> Path:
@@ -193,57 +152,26 @@ def _cache_path(url: str, prefix: str) -> Path:
 
 def inspect_wms_source(base_url: str, *, timeout: float = 15.0) -> dict:
     capabilities_url = build_wms_capabilities_url(base_url)
-    envelope = fetch_text_with_cache(
-        source="OGC WMS capabilities",
-        url=capabilities_url,
-        cache_path=_cache_path(capabilities_url, "wms"),
-        timeout=timeout,
-    )
+    envelope = fetch_text_with_cache(source="OGC WMS capabilities", url=capabilities_url, cache_path=_cache_path(capabilities_url, "wms"), timeout=timeout)
     parsed = parse_wms_capabilities(str(envelope.payload))
-    return {
-        **parsed,
-        "mode": envelope.mode,
-        "stale": envelope.stale,
-        "fetched_at": envelope.fetched_at,
-        "source_url": capabilities_url,
-        "analytical_effect": "CONTEXT_ONLY_UNTIL_CALIBRATED",
-    }
+    return {**parsed, "mode": envelope.mode, "stale": envelope.stale, "fetched_at": envelope.fetched_at, "source_url": capabilities_url, "analytical_effect": "CONTEXT_ONLY_UNTIL_CALIBRATED"}
 
 
 def inspect_wfs_source(base_url: str, *, timeout: float = 15.0) -> dict:
     capabilities_url = build_wfs_capabilities_url(base_url)
-    envelope = fetch_text_with_cache(
-        source="OGC WFS capabilities",
-        url=capabilities_url,
-        cache_path=_cache_path(capabilities_url, "wfs"),
-        timeout=timeout,
-    )
+    envelope = fetch_text_with_cache(source="OGC WFS capabilities", url=capabilities_url, cache_path=_cache_path(capabilities_url, "wfs"), timeout=timeout)
     parsed = parse_wfs_capabilities(str(envelope.payload))
-    return {
-        **parsed,
-        "mode": envelope.mode,
-        "stale": envelope.stale,
-        "fetched_at": envelope.fetched_at,
-        "source_url": capabilities_url,
-        "analytical_effect": "CONTEXT_ONLY_UNTIL_CALIBRATED",
-    }
+    return {**parsed, "mode": envelope.mode, "stale": envelope.stale, "fetched_at": envelope.fetched_at, "source_url": capabilities_url, "analytical_effect": "CONTEXT_ONLY_UNTIL_CALIBRATED"}
 
 
 def build_wfs_geojson_url(base_url: str, type_name: str, *, count: int | None = None) -> str:
-    raw = str(base_url or "").strip()
+    raw = validate_public_https_url(base_url, purpose="WFS source")
     parsed = urlsplit(raw)
-    if parsed.scheme.lower() != "https" or not parsed.netloc:
-        raise ValueError("WFS source must be an absolute HTTPS URL")
     if not str(type_name or "").strip():
         raise ValueError("WFS type name is required")
     params = dict(parse_qsl(parsed.query, keep_blank_values=True))
     params = {k: v for k, v in params.items() if k.lower() not in {"service", "request", "typenames", "typename", "outputformat", "count"}}
-    params.update({
-        "service": "WFS",
-        "request": "GetFeature",
-        "typeNames": str(type_name).strip(),
-        "outputFormat": "application/json",
-    })
+    params.update({"service": "WFS", "request": "GetFeature", "typeNames": str(type_name).strip(), "outputFormat": "application/json"})
     if count is not None:
         params["count"] = str(max(1, int(count)))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(params), parsed.fragment))

@@ -5,17 +5,16 @@ Reachability is not evidence of calibration or authority for analytical risk use
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from src.live_data import fetch_json_with_cache
+from src.url_safety import validate_public_https_url
 
 
 def _require_https(url: str) -> str:
-    value = str(url or "").strip()
-    if not value.lower().startswith("https://"):
-        raise ValueError("ArcGIS REST URL must use HTTPS")
-    return value
+    return validate_public_https_url(url, purpose="ArcGIS REST")
 
 
 def metadata_url(url: str) -> str:
@@ -25,6 +24,11 @@ def metadata_url(url: str) -> str:
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query["f"] = "pjson"
     return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), urlencode(query), parts.fragment))
+
+
+def _cache_path(source_url: str) -> Path:
+    digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:20]
+    return Path("data/cache/arcgis") / f"metadata_{digest}.json"
 
 
 def _extent(payload: dict) -> dict | None:
@@ -88,13 +92,14 @@ def parse_arcgis_metadata(payload: dict) -> dict:
 def inspect_arcgis_source(
     url: str,
     *,
-    cache_path: str | Path = "data/cache/arcgis/metadata.json",
+    cache_path: str | Path | None = None,
 ) -> dict:
     source_url = metadata_url(url)
+    resolved_cache = Path(cache_path) if cache_path is not None else _cache_path(source_url)
     envelope = fetch_json_with_cache(
         source="ArcGIS REST authority source",
         url=source_url,
-        cache_path=cache_path,
+        cache_path=resolved_cache,
         timeout=12.0,
     )
     parsed = parse_arcgis_metadata(envelope.payload)
