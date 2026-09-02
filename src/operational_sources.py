@@ -6,12 +6,14 @@ preserve source URL, LIVE/CACHED mode and validation results.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
 from src.live_data import fetch_text_with_cache
 from src.operational_file_ingest import parse_operational_content
 from src.operational_workspace import normalize_operational_habitations, normalize_operational_shelters
+from src.url_safety import validate_public_https_url
 
 # Existing names are preserved for deployment compatibility even though sources
 # can now return either CSV or Point GeoJSON.
@@ -20,10 +22,12 @@ SHELTER_URL_ENV = "SIH_SHELTER_CSV_URL"
 
 
 def _require_https(url: str) -> str:
-    value = str(url or "").strip()
-    if not value.lower().startswith("https://"):
-        raise ValueError("operational feed URL must use HTTPS")
-    return value
+    return validate_public_https_url(url, purpose="operational feed")
+
+
+def _source_cache_path(kind: str, source_url: str) -> Path:
+    digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:20]
+    return Path("data/cache/operational") / f"{kind}_{digest}.json"
 
 
 def configured_operational_urls() -> dict[str, str | None]:
@@ -47,12 +51,13 @@ def _apply_source_provenance(frame, *, envelope, source_url: str):
     return frame
 
 
-def fetch_operational_habitations(url: str | None = None, *, cache_path: str | Path = "data/cache/operational/habitations.json") -> dict:
+def fetch_operational_habitations(url: str | None = None, *, cache_path: str | Path | None = None) -> dict:
     source_url = _require_https(url or os.getenv(HABITATION_URL_ENV) or "")
+    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path("habitations", source_url)
     envelope = fetch_text_with_cache(
         source="Configured habitation feed",
         url=source_url,
-        cache_path=cache_path,
+        cache_path=resolved_cache,
         timeout=12.0,
     )
     frame, assessment = normalize_operational_habitations(_frame_from_envelope(envelope, source_url))
@@ -68,12 +73,13 @@ def fetch_operational_habitations(url: str | None = None, *, cache_path: str | P
     }
 
 
-def fetch_operational_shelters(url: str | None = None, *, cache_path: str | Path = "data/cache/operational/shelters.json") -> dict:
+def fetch_operational_shelters(url: str | None = None, *, cache_path: str | Path | None = None) -> dict:
     source_url = _require_https(url or os.getenv(SHELTER_URL_ENV) or "")
+    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path("shelters", source_url)
     envelope = fetch_text_with_cache(
         source="Configured shelter / relocation-site feed",
         url=source_url,
-        cache_path=cache_path,
+        cache_path=resolved_cache,
         timeout=12.0,
     )
     frame, assessment = normalize_operational_shelters(_frame_from_envelope(envelope, source_url))
