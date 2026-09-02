@@ -12,12 +12,12 @@ This application is a decision-support prototype being hardened for live operati
 
 ## Environment variables
 
-- `SIH_HABITATION_CSV_URL` — optional HTTPS URL for a validated operational habitation/settlement CSV. Configured feeds are validated and can bootstrap new browser sessions through the Streamlit server cache.
-- `SIH_SHELTER_CSV_URL` — optional HTTPS URL for a validated operational shelter/relocation-site CSV.
+- `SIH_HABITATION_CSV_URL` — optional HTTPS URL for a validated operational habitation/settlement feed. Despite the compatibility name, the endpoint may return CSV or Point GeoJSON/JSON. Configured feeds are validated and can bootstrap new browser sessions through the Streamlit server cache.
+- `SIH_SHELTER_CSV_URL` — optional HTTPS URL for a validated operational shelter/relocation-site feed. CSV and Point GeoJSON/JSON are supported.
 - `SIH_HAZARD_GEOJSON_URL` — optional HTTPS GeoJSON hazard source. Every feature must contain a numeric `hazard_score` in the range 0–100.
 - `SIH_HAZARD_CALIBRATION_CONFIRMED=true` — mandatory gate before a configured hazard GeoJSON can supply the analytical H component. Do not set this until the class/value mapping is documented and reviewed.
 - `SIH_HAZARD_SOURCE_LABEL` — optional human-readable source/layer label for hazard provenance.
-- `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains unconfigured/demo rather than fabricating identifiers.
+- `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains explicitly unconfigured rather than fabricating identifiers or alerts.
 - `SIH_ROAD_GRAPHML` — optional local OSM GraphML road-network path. If absent, routing can fall through to OSRM and then explicit straight-line fallback.
 - `SIH_REQUIRE_OPERATIONAL_DATA=true` — strict production mode. When enabled, pages that require habitation/shelter analysis stop instead of falling back to bundled synthetic demo cities if validated operational data is unavailable.
 
@@ -31,7 +31,7 @@ No API keys are required by the current Open-Meteo, USGS, GDACS, NASA EONET, OSM
 
 - `requirements.txt` — production/Streamlit Cloud runtime. It excludes test tooling and the optional OSMnx local-graph stack to reduce deployment installation time.
 - `requirements-routing.txt` — production requirements plus OSMnx for local cached GraphML routing.
-- `requirements-dev.txt` — routing bundle plus pytest for local development/testing.
+- `requirements-dev.txt` — routing bundle plus pytest for local development/testing. Optional experimental coordination clustering dependencies belong here rather than in the production web runtime.
 
 The deployed app still retains the routing fallback chain when OSMnx is absent: live OSRM → cached OSRM → explicit haversine fallback.
 
@@ -58,6 +58,7 @@ After deployment, smoke-test these pages in this order:
 6. Relocation Planner and PDF export
 7. Live Data Explorer
 8. System Readiness
+9. GIS Source Inspector
 
 If deployment fails, record the first red build/runtime error before changing dependencies.
 
@@ -75,11 +76,13 @@ python scripts/demo_gate.py
 python scripts/production_gate.py
 ```
 
-All three must pass.
+All three must pass. Pull requests also run a Python 3.12 deployment smoke workflow that installs the production dependencies, launches Streamlit and checks `/_stcore/health`.
 
 ## Operational data transition
 
-`pages/9_Operational_Data.py` is the migration path from bundled demonstration cities to real authority datasets. It supports operator-uploaded CSVs or configured HTTPS CSV feeds plus a calibrated GeoJSON hazard layer. The application validates required fields, coordinates, population/capacity integrity, carrying-capacity evidence and provenance before activation.
+`pages/9_Operational_Data.py` is the migration path from bundled demonstration cities to real authority datasets. It supports operator-uploaded CSV or Point GeoJSON/JSON datasets, configured HTTPS CSV/Point GeoJSON feeds, and a calibrated GeoJSON hazard layer. The application validates required fields, coordinates, population/capacity integrity, carrying-capacity evidence and provenance before activation.
+
+For Point GeoJSON habitation/site inputs, coordinates are read from feature geometry. Non-Point geometries are rejected instead of being silently centroided because centroid selection can change the analytical and routing meaning of an official feature.
 
 Bundled Puri/Guwahati/Chennai records must remain fallback-only until a chosen study area's authoritative habitation, shelter and calibrated hazard inputs can drive every core page. Do not relabel fallback data as real. Once the end-to-end replacement is tested, enable strict operational mode and then remove the bundled fallback in a later cleanup release.
 
@@ -89,6 +92,7 @@ Obtain one of the following from the accountable agency and preserve its source 
 
 - CSV/XLSX settlement or vulnerability export
 - CSV/XLSX shelter/relocation-site inventory
+- Point GeoJSON/JSON settlement or shelter feed
 - GeoJSON/Shapefile/GeoTIFF hazard boundaries
 - WMS/WFS/WMTS/ArcGIS REST endpoint plus exact layer name
 - API documentation plus a representative JSON/XML response

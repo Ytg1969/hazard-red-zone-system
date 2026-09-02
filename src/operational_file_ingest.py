@@ -1,9 +1,8 @@
-"""Operator-upload parsing for operational habitation and relocation-site datasets."""
+"""Parsing helpers for operational habitation and relocation-site datasets."""
 from __future__ import annotations
 
 import io
 import json
-from typing import BinaryIO
 
 import pandas as pd
 
@@ -26,7 +25,7 @@ def _geojson_to_dataframe(raw: bytes) -> pd.DataFrame:
     try:
         payload = json.loads(raw.decode("utf-8-sig"))
     except Exception as exc:
-        raise ValueError("uploaded GeoJSON/JSON must be valid UTF-8 JSON") from exc
+        raise ValueError("operational GeoJSON/JSON must be valid UTF-8 JSON") from exc
 
     if payload.get("type") != "FeatureCollection":
         raise ValueError("operational GeoJSON must be a FeatureCollection")
@@ -56,21 +55,36 @@ def _geojson_to_dataframe(raw: bytes) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def read_operational_upload(uploaded) -> pd.DataFrame:
-    """Read an operator upload as a dataframe.
+def parse_operational_content(content: str | bytes, *, source_name: str = "operational.csv") -> pd.DataFrame:
+    """Parse CSV or Point GeoJSON from uploads or configured HTTPS sources.
 
-    Supported formats:
-    - CSV
-    - GeoJSON/JSON FeatureCollection with Point features
-
-    GeoJSON geometry supplies latitude/longitude only when those properties are
-    not already present. Validation of IDs, population, capacity and provenance
-    remains the responsibility of the operational dataset validators.
+    Remote authority download endpoints often have no file extension, so payload
+    content is used as a fallback signal. Operator uploads are stricter and are
+    validated by ``read_operational_upload`` before reaching this helper.
     """
-    name = _name(uploaded).lower()
-    raw = _read_bytes(uploaded)
-    if name.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(raw))
-    if name.endswith(".geojson") or name.endswith(".json"):
+    raw = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+    name = str(source_name or "").lower().split("?", 1)[0]
+    stripped = raw.lstrip()
+
+    if name.endswith(".geojson") or name.endswith(".json") or stripped.startswith(b"{"):
         return _geojson_to_dataframe(raw)
-    raise ValueError("operational upload must be CSV, GeoJSON, or JSON")
+
+    try:
+        return pd.read_csv(io.BytesIO(raw))
+    except Exception as csv_exc:
+        if stripped.startswith(b"{"):
+            return _geojson_to_dataframe(raw)
+        raise ValueError("operational source could not be parsed as CSV or Point GeoJSON") from csv_exc
+
+
+def read_operational_upload(uploaded) -> pd.DataFrame:
+    """Read an operator upload as CSV or Point GeoJSON/JSON.
+
+    Unlike remote configured URLs, browser uploads must use an explicit supported
+    filename extension so accidental XLSX/ZIP/binary uploads are never treated as
+    permissive CSV input.
+    """
+    name = _name(uploaded).lower().split("?", 1)[0]
+    if not name.endswith((".csv", ".geojson", ".json")):
+        raise ValueError("operational upload must be CSV, GeoJSON, or JSON")
+    return parse_operational_content(_read_bytes(uploaded), source_name=name)
