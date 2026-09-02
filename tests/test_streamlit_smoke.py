@@ -5,20 +5,38 @@ from streamlit.testing.v1 import AppTest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-
-PAGES = [
-    ROOT / "app.py",
-    ROOT / "pages/1_Command_Center.py",
-    ROOT / "pages/2_Red_Zone_Map.py",
-    ROOT / "pages/3_Risk_Analysis.py",
-    ROOT / "pages/4_Relocation_Planner.py",
-    ROOT / "pages/5_Scenario_Studio.py",
-    ROOT / "pages/6_Methodology.py",
+MAIN = ROOT / "app.py"
+CHILD_PAGES = [
+    "pages/0_Operations_Hub.py",
+    "pages/1_Command_Center.py",
+    "pages/2_Red_Zone_Map.py",
+    "pages/3_Risk_Analysis.py",
+    "pages/4_Relocation_Planner.py",
+    "pages/5_Scenario_Studio.py",
+    "pages/6_Methodology.py",
+    "pages/7_Live_Data_Context.py",
+    "pages/8_System_Readiness.py",
+    "pages/9_Operational_Data.py",
+    "pages/10_GIS_Source_Inspector.py",
+    "pages/11_Calibrated_Hazard_Source.py",
 ]
 
 
-@pytest.mark.parametrize("path", PAGES, ids=lambda path: path.name)
-def test_streamlit_page_smoke(path: Path):
-    app = AppTest.from_file(path, default_timeout=20)
+def _main_app() -> AppTest:
+    app = AppTest.from_file(MAIN, default_timeout=30)
     app.run()
-    assert not app.exception, f"Streamlit page raised exception: {path}"
+    assert not app.exception, f"Main Streamlit app raised exception: {app.exception}"
+    return app
+
+
+def test_streamlit_main_smoke():
+    _main_app()
+
+
+@pytest.mark.parametrize("page", CHILD_PAGES, ids=lambda page: Path(page).name)
+def test_streamlit_child_page_smoke(page: str):
+    path = ROOT / page
+    assert path.exists(), f"Streamlit page is missing: {path}"
+    app = _main_app()
+    app.switch_page(page).run()
+    assert not app.exception, f"Streamlit child page raised exception: {page}: {app.exception}"
