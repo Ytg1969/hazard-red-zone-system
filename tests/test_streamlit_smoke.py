@@ -19,12 +19,13 @@ PAGES = [
     ROOT / "pages/8_System_Readiness.py",
     ROOT / "pages/9_Operational_Data.py",
     ROOT / "pages/10_GIS_Source_Inspector.py",
-    ROOT / "pages/11_Hazard_Source.py",
+    ROOT / "pages/11_Calibrated_Hazard_Source.py",
 ]
 
 
 @pytest.mark.parametrize("path", PAGES, ids=lambda path: path.name)
 def test_streamlit_page_smoke(path: Path):
+    assert path.exists(), f"Streamlit page is missing: {path}"
     app = AppTest.from_file(path, default_timeout=30)
     app.run()
     assert not app.exception, f"Streamlit page raised exception: {path}: {app.exception}"
