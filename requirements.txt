@@ -6,6 +6,8 @@ shapely
 folium
 streamlit-folium
 plotly
+scikit-learn
 networkx
+osmnx
 reportlab
 certifi
