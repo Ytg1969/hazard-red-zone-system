@@ -9,7 +9,7 @@ on:
 jobs:
   streamlit-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -25,9 +25,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          python -m pip install pytest
 
       - name: Compile production sources
-        run: python -m compileall -q app.py pages src scripts
+        run: python -m compileall -q app.py pages src scripts tests
+
+      - name: Smoke every Streamlit page with production dependencies
+        run: python -m pytest tests/test_streamlit_smoke.py -q
+
+      - name: Run deterministic demo gate with production dependencies
+        run: python scripts/demo_gate.py
 
       - name: Start Streamlit
         run: |
