@@ -1,0 +1,58 @@
+name: Deployment Smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  streamlit-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install production dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile production sources
+        run: python -m compileall -q app.py pages src scripts
+
+      - name: Start Streamlit
+        run: |
+          streamlit run app.py --server.headless=true --server.address=127.0.0.1 --server.port=8501 > /tmp/streamlit.log 2>&1 &
+          echo $! > /tmp/streamlit.pid
+
+      - name: Wait for health endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8501/_stcore/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Streamlit did not become healthy"
+          cat /tmp/streamlit.log
+          exit 1
+
+      - name: Show startup log on failure
+        if: failure()
+        run: cat /tmp/streamlit.log || true
+
+      - name: Stop Streamlit
+        if: always()
+        run: |
+          if [ -f /tmp/streamlit.pid ]; then
+            kill $(cat /tmp/streamlit.pid) || true
+          fi
