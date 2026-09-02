@@ -20,11 +20,11 @@ st.info(
     "This workspace is the production-data gateway. Reachability does not prove authority: source ownership, timestamps, field definitions and hazard calibration must be verified."
 )
 
-# Auto-bootstrap configured deployment feeds so a public deployment does not
-# require every new browser session to upload the same authority datasets.
+# This management page deliberately bypasses the strict-mode stop so operators
+# can recover from a broken/missing configured feed by activating validated uploads.
 resolved = None
 try:
-    resolved = resolve_operational_workspace(auto_configured=True)
+    resolved = resolve_operational_workspace(auto_configured=True, enforce_required=False)
 except Exception as exc:
     st.warning(f"Configured operational feeds could not be auto-loaded: {exc}")
 
@@ -85,9 +85,10 @@ elif source_mode == "Refresh HTTPS feeds":
         except Exception as exc:
             st.error(f"Configured feed refresh failed: {exc}")
 
-# Resolve again after any activation action.
+# Resolve again after any activation action; strict production mode remains
+# bypassed only on this management page so the upload/recovery workflow is usable.
 try:
-    resolved = resolve_operational_workspace(auto_configured=True)
+    resolved = resolve_operational_workspace(auto_configured=True, enforce_required=False)
 except Exception as exc:
     resolved = None
     st.error(f"Operational workspace validation failed: {exc}")
