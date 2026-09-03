@@ -60,10 +60,16 @@ def _frame_from_envelope(envelope, source_url: str):
 
 
 def _apply_source_provenance(frame, *, envelope, source_url: str):
+    """Attach transport provenance without inventing an observation timestamp.
+
+    `fetched_at` only tells us when this application retrieved the source. It is
+    not evidence that population, occupancy, capacity, or another source field
+    was observed at that moment. Source-native `data_timestamp` is therefore
+    preserved when supplied and left absent when the source does not provide it.
+    """
     frame = frame.copy()
     frame["data_mode"] = envelope.mode
-    if "data_timestamp" not in frame.columns:
-        frame["data_timestamp"] = envelope.fetched_at
+    frame["source_fetched_at"] = envelope.fetched_at
     if "source_context" not in frame.columns:
         frame["source_context"] = source_url
     return frame

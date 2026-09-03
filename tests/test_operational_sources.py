@@ -4,6 +4,7 @@ from src.live_data import DataEnvelope
 
 HAB_CSV = """habitation_id,name,latitude,longitude,population,children_population,elderly_population,hazard_score,exposure_score,accessibility_score\nH1,Village,20,85,1000,180,90,70,65,55\n"""
 SHELTER_CSV = """shelter_id,name,latitude,longitude,total_capacity,current_occupancy,water_capacity,sanitation_capacity,access_capacity,safety_score,accessibility_score\nS1,Shelter,20.1,85.1,1200,100,1000,950,900,90,80\n"""
+HAB_CSV_WITH_TIME = """habitation_id,name,latitude,longitude,population,children_population,elderly_population,hazard_score,exposure_score,accessibility_score,data_timestamp\nH1,Village,20,85,1000,180,90,70,65,55,2011-03-01T00:00:00Z\n"""
 HAB_GEOJSON = """{
   "type": "FeatureCollection",
   "features": [
@@ -54,7 +55,7 @@ def test_operational_feed_requires_https():
         raise AssertionError("HTTP operational URL should be rejected")
 
 
-def test_habitation_feed_sets_live_provenance(monkeypatch, tmp_path):
+def test_habitation_feed_sets_live_transport_provenance_without_inventing_observation_time(monkeypatch, tmp_path):
     monkeypatch.setattr(
         operational_sources,
         "fetch_text_with_cache",
@@ -63,8 +64,23 @@ def test_habitation_feed_sets_live_provenance(monkeypatch, tmp_path):
     result = operational_sources.fetch_operational_habitations("https://example.test/h.csv", cache_path=tmp_path / "h.json")
     assert result["mode"] == "LIVE"
     assert result["format"] == "csv"
-    assert result["data"].iloc[0]["data_mode"] == "LIVE"
-    assert result["data"].iloc[0]["source_context"] == "https://example.test/h.csv"
+    row = result["data"].iloc[0]
+    assert row["data_mode"] == "LIVE"
+    assert row["source_context"] == "https://example.test/h.csv"
+    assert row["source_fetched_at"] == "2026-09-01T00:00:00+00:00"
+    assert "data_timestamp" not in result["data"].columns
+
+
+def test_source_native_observation_timestamp_is_preserved(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        operational_sources,
+        "fetch_text_with_cache",
+        lambda **kwargs: DataEnvelope(source="test", mode="LIVE", fetched_at="2026-09-01T00:00:00+00:00", payload=HAB_CSV_WITH_TIME, source_url=kwargs["url"]),
+    )
+    result = operational_sources.fetch_operational_habitations("https://example.test/h.csv", cache_path=tmp_path / "h.json")
+    row = result["data"].iloc[0]
+    assert row["data_timestamp"] == "2011-03-01T00:00:00Z"
+    assert row["source_fetched_at"] == "2026-09-01T00:00:00+00:00"
 
 
 def test_shelter_feed_preserves_cached_mode(monkeypatch, tmp_path):
@@ -77,7 +93,10 @@ def test_shelter_feed_preserves_cached_mode(monkeypatch, tmp_path):
     assert result["mode"] == "CACHED"
     assert result["stale"] is True
     assert result["format"] == "csv"
-    assert result["data"].iloc[0]["data_mode"] == "CACHED"
+    row = result["data"].iloc[0]
+    assert row["data_mode"] == "CACHED"
+    assert row["source_fetched_at"] == "2026-09-01T00:00:00+00:00"
+    assert "data_timestamp" not in result["data"].columns
 
 
 def test_configured_habitation_geojson_uses_point_geometry(monkeypatch, tmp_path):
