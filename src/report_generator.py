@@ -14,12 +14,47 @@ def _safe(value) -> str:
     return escape(str(value if value is not None else "-"))
 
 
+def _provenance_rows(provenance: dict | None) -> list[tuple[str, str]]:
+    """Flatten non-secret workspace provenance for export.
+
+    Observation/reference timestamps remain separate from HTTP retrieval times.
+    Missing evidence is shown as unavailable rather than invented.
+    """
+    if not provenance:
+        return []
+    rows: list[tuple[str, str]] = []
+    for key, label in [("habitations", "Habitation data"), ("shelters", "Relocation-site data")]:
+        item = provenance.get(key) or {}
+        sources = item.get("sources") or []
+        observed = item.get("observation_timestamps") or []
+        fetched = item.get("fetch_timestamps") or []
+        rows.extend(
+            [
+                (f"{label} mode", str(item.get("mode", "UNVERIFIED"))),
+                (f"{label} source", "; ".join(map(str, sources)) if sources else "Not supplied"),
+                (f"{label} observation/reference time", "; ".join(map(str, observed)) if observed else "Not supplied"),
+                (f"{label} retrieval time", "; ".join(map(str, fetched)) if fetched else "Not supplied"),
+            ]
+        )
+    hazard = provenance.get("hazard") or {}
+    if hazard:
+        rows.extend(
+            [
+                ("Hazard source", str(hazard.get("label") or "Not supplied")),
+                ("Hazard source mode", str(hazard.get("mode") or "UNVERIFIED")),
+                ("Hazard calibration", str(hazard.get("calibration_status") or "Reviewed/calibrated source required")),
+            ]
+        )
+    return rows
+
+
 def generate_action_plan(
     habitation: dict,
     risk: dict,
     relocation: dict | None,
     allocation: dict | None = None,
     data_mode: str = "DEMO",
+    provenance: dict | None = None,
 ) -> str:
     """Generate a professional Markdown decision-support action plan."""
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -81,6 +116,13 @@ def generate_action_plan(
                 f"({item.get('distance_km', '—')} km, suitability {item.get('suitability_score', '—')}/100)"
             )
 
+    provenance_rows = _provenance_rows(provenance)
+    if provenance_rows:
+        lines.extend(["", "## Data Provenance"])
+        for label, value in provenance_rows:
+            lines.append(f"- {label}: {value}")
+        lines.append("- Retrieval time is not treated as the source observation/reference time.")
+
     lines.extend(
         [
             "",
@@ -104,6 +146,7 @@ def generate_action_plan_pdf(
     relocation: dict | None,
     allocation: dict | None = None,
     data_mode: str = "DEMO",
+    provenance: dict | None = None,
 ) -> bytes:
     """Generate a compact, browser-downloadable PDF action plan."""
     buffer = BytesIO()
@@ -190,10 +233,7 @@ def generate_action_plan_pdf(
                     f"Route status: {_safe(relocation.get('route_status', '-'))}",
                     body_style,
                 ),
-                Paragraph(
-                    f"Route note: {_safe(relocation.get('route_note') or '-')}",
-                    body_style,
-                ),
+                Paragraph(f"Route note: {_safe(relocation.get('route_note') or '-')}", body_style),
                 Paragraph(
                     f"Available capacity: {_safe(relocation.get('available_capacity', '-'))} | "
                     f"Capacity status: {_safe(relocation.get('capacity_validation_status', '-'))} | "
@@ -232,6 +272,33 @@ def generate_action_plan_pdf(
                     body_style,
                 )
             )
+
+    provenance_rows = _provenance_rows(provenance)
+    if provenance_rows:
+        story.append(Paragraph("Data Provenance", heading_style))
+        provenance_table = Table(
+            [[Paragraph(_safe(label), body_style), Paragraph(_safe(value), body_style)] for label, value in provenance_rows],
+            colWidths=[55 * mm, 115 * mm],
+        )
+        provenance_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F3F6F8")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.extend(
+            [
+                provenance_table,
+                Paragraph("Retrieval time is not treated as the source observation/reference time.", disclaimer_style),
+            ]
+        )
 
     story.extend(
         [
