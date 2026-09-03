@@ -53,12 +53,23 @@ source_mode = st.segmented_control(
 label = st.text_input("Operational area label", placeholder="e.g. Wayanad District, Kerala")
 
 if source_mode == "Upload files":
-    st.caption("Accepted settlement/site uploads: CSV or Point GeoJSON/JSON. GeoJSON Point geometry supplies latitude/longitude automatically.")
+    st.caption(
+        "Accepted settlement/site uploads: CSV, XLSX, or Point GeoJSON/JSON. "
+        "XLSX uses the first worksheet only; GeoJSON Point geometry supplies latitude/longitude automatically."
+    )
     left, right = st.columns(2, gap="large")
     with left:
-        habitation_upload = st.file_uploader("Habitation / settlement dataset", type=["csv", "geojson", "json"], key="ops_hab")
+        habitation_upload = st.file_uploader(
+            "Habitation / settlement dataset",
+            type=["csv", "xlsx", "geojson", "json"],
+            key="ops_hab",
+        )
     with right:
-        shelter_upload = st.file_uploader("Shelter / relocation-site dataset", type=["csv", "geojson", "json"], key="ops_shelter")
+        shelter_upload = st.file_uploader(
+            "Shelter / relocation-site dataset",
+            type=["csv", "xlsx", "geojson", "json"],
+            key="ops_shelter",
+        )
     if st.button("Validate and activate uploaded workspace", type="primary", width="stretch", disabled=not (habitation_upload and shelter_upload)):
         try:
             habitations_raw, h_assessment = normalize_operational_habitations(read_operational_upload(habitation_upload))
