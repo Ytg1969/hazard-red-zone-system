@@ -36,6 +36,9 @@ jobs:
       - name: Run deterministic demo gate with production dependencies
         run: python scripts/demo_gate.py
 
+      - name: Run offline production gate with production dependencies
+        run: python scripts/production_gate.py
+
       - name: Start Streamlit
         run: |
           streamlit run app.py --server.headless=true --server.address=127.0.0.1 --server.port=8501 > /tmp/streamlit.log 2>&1 &
