@@ -53,6 +53,10 @@ def generate_action_plan(
                 f"- Routing mode: {relocation.get('routing_mode', '—')}",
                 f"- Available capacity: {relocation.get('available_capacity', '—')}",
                 f"- Capacity validation: {relocation.get('capacity_validation_status', '—')}",
+                f"- Limiting capacity resource: {relocation.get('limiting_resource_label', '—')}",
+                f"- Limiting capacity: {relocation.get('limiting_capacity', '—')}",
+                f"- Capacity evidence completeness: {relocation.get('capacity_evidence_completeness_pct', '—')}%",
+                f"- Capacity utilization: {relocation.get('capacity_utilization_pct', '—')}%",
                 f"- Suitability score: {relocation.get('suitability_score', '—')} / 100",
             ]
         )
@@ -186,6 +190,13 @@ def generate_action_plan_pdf(
                     f"Available capacity: {_safe(relocation.get('available_capacity', '-'))} | "
                     f"Capacity status: {_safe(relocation.get('capacity_validation_status', '-'))} | "
                     f"Suitability: {_safe(relocation.get('suitability_score', '-'))} / 100",
+                    body_style,
+                ),
+                Paragraph(
+                    f"Limiting resource: {_safe(relocation.get('limiting_resource_label', '-'))} | "
+                    f"Limiting capacity: {_safe(relocation.get('limiting_capacity', '-'))} | "
+                    f"Evidence completeness: {_safe(relocation.get('capacity_evidence_completeness_pct', '-'))}% | "
+                    f"Utilization: {_safe(relocation.get('capacity_utilization_pct', '-'))}%",
                     body_style,
                 ),
             ]
