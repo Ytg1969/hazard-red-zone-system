@@ -59,6 +59,34 @@ def _frame_from_envelope(envelope, source_url: str):
     return parse_operational_content(str(envelope.payload), source_name=source_url)
 
 
+def fetch_operational_preview(url: str, *, cache_path: str | Path | None = None) -> dict:
+    """Fetch a public CSV/Point-GeoJSON source without applying schema semantics.
+
+    This is intentionally a preview/discovery adapter for the Schema Mapper. It
+    validates the public HTTPS target and parses the transport payload, but it
+    does not rename fields, certify authority, add analytical provenance, or run
+    habitation/shelter production validation. The operator must explicitly map
+    source fields before the dataset can enter the operational workspace.
+    """
+    source_url = _require_https(url)
+    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path("preview", source_url)
+    envelope = fetch_text_with_cache(
+        source="Operational schema preview",
+        url=source_url,
+        cache_path=resolved_cache,
+        timeout=12.0,
+    )
+    frame = _frame_from_envelope(envelope, source_url)
+    return {
+        "data": frame,
+        "mode": envelope.mode,
+        "stale": envelope.stale,
+        "fetched_at": envelope.fetched_at,
+        "source_url": source_url,
+        "format": "geojson" if str(envelope.payload).lstrip().startswith("{") else "csv",
+    }
+
+
 def _apply_source_provenance(frame, *, envelope, source_url: str):
     """Attach transport provenance without inventing an observation timestamp.
 
