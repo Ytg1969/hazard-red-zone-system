@@ -19,6 +19,7 @@ CHILD_PAGES = [
     "pages/9_Operational_Data.py",
     "pages/10_GIS_Source_Inspector.py",
     "pages/11_Calibrated_Hazard_Source.py",
+    "pages/12_Schema_Mapper.py",
 ]
 STRICT_MODE_PAGES = [
     "pages/0_Operations_Hub.py",
@@ -30,6 +31,7 @@ STRICT_MODE_PAGES = [
     "pages/7_Live_Data_Context.py",
     "pages/8_System_Readiness.py",
     "pages/9_Operational_Data.py",
+    "pages/12_Schema_Mapper.py",
 ]
 
 

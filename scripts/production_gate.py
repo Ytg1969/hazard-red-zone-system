@@ -33,6 +33,7 @@ REQUIRED_PAGES = [
     ROOT / "pages/9_Operational_Data.py",
     ROOT / "pages/10_GIS_Source_Inspector.py",
     ROOT / "pages/11_Calibrated_Hazard_Source.py",
+    ROOT / "pages/12_Schema_Mapper.py",
 ]
 
 _WMS_SAMPLE = """<WMS_Capabilities version='1.3.0' xmlns='http://www.opengis.net/wms'>
