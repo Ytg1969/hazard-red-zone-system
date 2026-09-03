@@ -43,7 +43,7 @@ def test_recommendation_filters_unsafe_and_full_shelters():
     assert result["shelter_id"] == "GOOD"
 
 
-def test_ranked_shelters_return_suitability_score():
+def test_ranked_shelters_return_suitability_and_capacity_evidence():
     habitation = {"latitude": 20.27, "longitude": 85.84, "population": 200}
     shelters = [
         {
@@ -53,6 +53,9 @@ def test_ranked_shelters_return_suitability_score():
             "longitude": 85.85,
             "total_capacity": 300,
             "current_occupancy": 0,
+            "water_capacity": 250,
+            "sanitation_capacity": 280,
+            "access_capacity": 260,
             "safety_score": 85,
             "accessibility_score": 80,
         },
@@ -70,7 +73,13 @@ def test_ranked_shelters_return_suitability_score():
     ranked = rank_shelters(habitation, shelters)
     assert len(ranked) == 2
     assert all("suitability_score" in item for item in ranked)
+    assert all("limiting_resource_label" in item for item in ranked)
+    assert all("capacity_evidence_completeness_pct" in item for item in ranked)
     assert ranked[0]["suitability_score"] >= ranked[1]["suitability_score"]
+    candidate_a = next(item for item in ranked if item["shelter_id"] == "A")
+    assert candidate_a["limiting_resource"] == "water_capacity"
+    assert candidate_a["limiting_capacity"] == 250.0
+    assert candidate_a["capacity_evidence_completeness_pct"] == 100.0
 
 
 def test_population_allocation_never_exceeds_available_capacity():
