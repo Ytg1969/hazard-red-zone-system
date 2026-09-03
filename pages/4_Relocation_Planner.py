@@ -228,12 +228,33 @@ with st.expander("Experimental global optimization comparison", expanded=False):
     st.caption(optimized.get("note", ""))
 
 st.markdown("### 5 · Draft administrative action plan")
-action_plan = generate_action_plan(habitation=habitation, risk=risk, relocation=recommended, allocation=allocation, data_mode=data_mode)
+report_provenance = dict((workspace or {}).get("provenance") or {})
+if operational and hazard_source:
+    report_provenance["hazard"] = {
+        "label": hazard_source.get("label", "Calibrated hazard GeoJSON"),
+        "mode": hazard_source.get("mode", "SESSION"),
+        "calibration_status": "Explicitly activated calibrated hazard source",
+    }
+action_plan = generate_action_plan(
+    habitation=habitation,
+    risk=risk,
+    relocation=recommended,
+    allocation=allocation,
+    data_mode=data_mode,
+    provenance=report_provenance or None,
+)
 
 pdf_plan = None
 pdf_error = None
 try:
-    generated_pdf = generate_action_plan_pdf(habitation=habitation, risk=risk, relocation=recommended, allocation=allocation, data_mode=data_mode)
+    generated_pdf = generate_action_plan_pdf(
+        habitation=habitation,
+        risk=risk,
+        relocation=recommended,
+        allocation=allocation,
+        data_mode=data_mode,
+        provenance=report_provenance or None,
+    )
     if not isinstance(generated_pdf, (bytes, bytearray)):
         raise TypeError("PDF generator did not return binary data")
     pdf_plan = bytes(generated_pdf)
