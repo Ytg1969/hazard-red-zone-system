@@ -15,6 +15,7 @@ dependencies:
   - osmnx
   - reportlab
   - certifi
+  - openpyxl
   - pytest
   - pip
   - pip:
