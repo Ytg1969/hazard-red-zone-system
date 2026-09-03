@@ -87,6 +87,9 @@ def rank_shelters(
     shelters,
     weights: dict | None = None,
     minimum_safety_score: float = 50.0,
+    *,
+    graphml_path=None,
+    allow_live_routing: bool = False,
 ) -> list[dict]:
     weights = weights or DEFAULT_RELOCATION_WEIGHTS
     required = {"safety", "capacity", "accessibility", "distance"}
@@ -114,7 +117,12 @@ def rank_shelters(
             continue
 
         destination = (float(shelter["latitude"]), float(shelter["longitude"]))
-        route = estimate_route(origin, destination)
+        route = estimate_route(
+            origin,
+            destination,
+            graphml_path=graphml_path,
+            allow_live_osrm=allow_live_routing,
+        )
         distance_km = float(route["distance_km"])
 
         capacity_score = 100.0 if population <= 0 else min(100.0, available / population * 100.0)
@@ -137,6 +145,10 @@ def rank_shelters(
                 "distance_km": round(distance_km, 2),
                 "travel_time_min": route.get("travel_time_min"),
                 "routing_mode": route.get("routing_mode", "unknown"),
+                "route_status": route.get("route_status", "UNKNOWN"),
+                "route_note": route.get("route_note", ""),
+                "route_source_url": route.get("source_url"),
+                "route_stale": bool(route.get("stale", False)),
                 "safety_score": round(safety_score, 2),
                 "accessibility_score": round(accessibility_score, 2),
                 "effective_capacity": capacity["effective_capacity"],

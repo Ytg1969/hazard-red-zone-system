@@ -86,7 +86,16 @@ if operational and hazard_source:
     st.caption(f"Calibrated hazard source: **{hazard_source.get('label', 'GeoJSON')}** · {hazard_source.get('mode', 'SESSION')}")
 
 st.markdown("### 2 · Compare safe relocation sites")
-ranked = rank_shelters(habitation, local_shelters.to_dict(orient="records"))
+use_live_routing = st.checkbox(
+    "Use live OSRM road distance when a local cached road graph is unavailable",
+    value=False,
+    help="Road routing improves distance/travel-time evidence but does not include live traffic, road closures or hazard avoidance. If unavailable, the planner falls back visibly to cached/straight-line distance.",
+)
+ranked = rank_shelters(
+    habitation,
+    local_shelters.to_dict(orient="records"),
+    allow_live_routing=use_live_routing,
+)
 if not ranked:
     st.error("No relocation site currently passes the safety and available-capacity gates.")
     render_disclaimer()
@@ -96,6 +105,9 @@ show_cols = [c for c in [
     "shelter_name",
     "suitability_score",
     "distance_km",
+    "travel_time_min",
+    "route_status",
+    "routing_mode",
     "safety_score",
     "accessibility_score",
     "available_capacity",
@@ -103,9 +115,15 @@ show_cols = [c for c in [
     "capacity_evidence_completeness_pct",
     "capacity_utilization_pct",
     "capacity_validation_status",
-    "routing_mode",
 ] if c in ranked_df.columns]
 st.dataframe(ranked_df[show_cols], width="stretch", hide_index=True)
+
+road_modes = {"cached_osm_graph", "osrm_live", "osrm_cached"}
+road_candidate_count = sum(1 for item in ranked if item.get("routing_mode") in road_modes)
+if road_candidate_count:
+    st.success(f"Road-network distance available for {road_candidate_count} of {len(ranked)} qualified site(s).")
+else:
+    st.warning("No road-network route is active for the qualified sites; current ranking uses explicit straight-line fallback distance.")
 
 visual_left, visual_right = st.columns(2, gap="large")
 with visual_left:
@@ -125,6 +143,18 @@ with left:
     primary_metrics[1].metric("Distance", f"{recommended['distance_km']:.2f} km")
     primary_metrics[0].metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
     primary_metrics[1].metric("Capacity Use", f"{recommended.get('capacity_utilization_pct', 0):.1f}%")
+    travel_time = recommended.get("travel_time_min")
+    if travel_time is not None:
+        st.metric("Estimated Road Travel Time", f"{float(travel_time):.1f} min")
+    st.caption(
+        f"Route provenance: **{recommended.get('routing_mode', 'unknown')}** · "
+        f"{recommended.get('route_status', 'UNKNOWN')}"
+    )
+    route_note = str(recommended.get("route_note") or "").strip()
+    if route_note:
+        st.caption(route_note)
+    if recommended.get("route_stale"):
+        st.warning("The selected route is using cached routing data because the latest live refresh was unavailable.")
     st.caption(
         f"Capacity evidence: **{recommended['capacity_validation_status']}** · "
         f"{recommended.get('capacity_evidence_completeness_pct', 0):.1f}% resource evidence complete"
@@ -165,6 +195,13 @@ with st.expander("Carrying-capacity evidence across qualified sites", expanded=F
         "VALIDATED means water, sanitation and access/logistics sub-capacities are all known. "
         "PARTIAL uses the minimum known constraint. UNVALIDATED falls back to total physical capacity. Unknown evidence is never treated as zero."
     )
+
+with st.expander("Route provenance across qualified sites", expanded=False):
+    route_cols = [c for c in [
+        "shelter_name", "distance_km", "travel_time_min", "routing_mode", "route_status", "route_stale", "route_note"
+    ] if c in ranked_df.columns]
+    st.dataframe(ranked_df[route_cols].astype(str), width="stretch", hide_index=True)
+    st.caption("Routing is advisory. The system currently does not claim live traffic, road-closure awareness or hazard-avoiding routing.")
 
 st.markdown("### 4 · Shared-capacity allocation")
 st.caption("All priority habitations share one capacity ledger. The planner never double-books capacity; demonstration city boundaries are used only in fallback mode.")

@@ -75,11 +75,58 @@ def test_ranked_shelters_return_suitability_and_capacity_evidence():
     assert all("suitability_score" in item for item in ranked)
     assert all("limiting_resource_label" in item for item in ranked)
     assert all("capacity_evidence_completeness_pct" in item for item in ranked)
+    assert all("route_status" in item for item in ranked)
     assert ranked[0]["suitability_score"] >= ranked[1]["suitability_score"]
     candidate_a = next(item for item in ranked if item["shelter_id"] == "A")
     assert candidate_a["limiting_resource"] == "water_capacity"
     assert candidate_a["limiting_capacity"] == 250.0
     assert candidate_a["capacity_evidence_completeness_pct"] == 100.0
+    assert candidate_a["routing_mode"] == "haversine_fallback"
+    assert candidate_a["route_status"] == "STRAIGHT_LINE_FALLBACK"
+
+
+def test_ranked_shelter_passes_live_routing_flag_and_preserves_route_provenance(monkeypatch):
+    calls = []
+
+    def fake_route(origin, destination, graphml_path=None, average_speed_kmph=30.0, *, allow_live_osrm=False):
+        calls.append({
+            "origin": origin,
+            "destination": destination,
+            "graphml_path": graphml_path,
+            "allow_live_osrm": allow_live_osrm,
+        })
+        return {
+            "distance_km": 12.3,
+            "travel_time_min": 24.5,
+            "routing_mode": "osrm_cached",
+            "route_status": "ROAD_NETWORK_ROUTE",
+            "route_note": "Cached OSRM road route.",
+            "source_url": "https://router.project-osrm.org/example",
+            "stale": True,
+        }
+
+    monkeypatch.setattr("src.relocation.estimate_route", fake_route)
+    habitation = {"latitude": 20.27, "longitude": 85.84, "population": 100}
+    shelters = [{
+        "shelter_id": "A",
+        "name": "A",
+        "latitude": 20.30,
+        "longitude": 85.90,
+        "total_capacity": 500,
+        "current_occupancy": 0,
+        "safety_score": 90,
+        "accessibility_score": 80,
+    }]
+
+    ranked = rank_shelters(habitation, shelters, graphml_path="roads.graphml", allow_live_routing=True)
+
+    assert calls and calls[0]["allow_live_osrm"] is True
+    assert calls[0]["graphml_path"] == "roads.graphml"
+    assert ranked[0]["routing_mode"] == "osrm_cached"
+    assert ranked[0]["route_status"] == "ROAD_NETWORK_ROUTE"
+    assert ranked[0]["route_stale"] is True
+    assert ranked[0]["travel_time_min"] == 24.5
+    assert ranked[0]["route_source_url"].startswith("https://router.project-osrm.org")
 
 
 def test_population_allocation_never_exceeds_available_capacity():

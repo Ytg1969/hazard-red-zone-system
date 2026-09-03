@@ -51,6 +51,8 @@ def generate_action_plan(
                 f"- Distance: {relocation.get('distance_km', '—')} km",
                 f"- Travel time: {relocation.get('travel_time_min') or 'Not available in fallback routing'}",
                 f"- Routing mode: {relocation.get('routing_mode', '—')}",
+                f"- Route status: {relocation.get('route_status', '—')}",
+                f"- Route note: {relocation.get('route_note', '—') or '—'}",
                 f"- Available capacity: {relocation.get('available_capacity', '—')}",
                 f"- Capacity validation: {relocation.get('capacity_validation_status', '—')}",
                 f"- Limiting capacity resource: {relocation.get('limiting_resource_label', '—')}",
@@ -86,6 +88,7 @@ def generate_action_plan(
             "- Confirm current road conditions before dispatch.",
             "- Revalidate shelter occupancy and essential-resource capacity before movement.",
             "- Prioritize vulnerable groups according to local disaster-management protocols.",
+            "- Route estimates do not currently include live traffic, road closures or hazard avoidance.",
             "",
             "---",
             "**Decision-support disclaimer:** This prototype does not issue an official evacuation order. "
@@ -183,7 +186,12 @@ def generate_action_plan_pdf(
                 Paragraph(
                     f"Distance: {_safe(relocation.get('distance_km', '-'))} km | "
                     f"Travel time: {_safe(relocation.get('travel_time_min') or 'fallback routing only')} | "
-                    f"Routing mode: {_safe(relocation.get('routing_mode', '-'))}",
+                    f"Routing mode: {_safe(relocation.get('routing_mode', '-'))} | "
+                    f"Route status: {_safe(relocation.get('route_status', '-'))}",
+                    body_style,
+                ),
+                Paragraph(
+                    f"Route note: {_safe(relocation.get('route_note') or '-')}",
                     body_style,
                 ),
                 Paragraph(
@@ -231,6 +239,7 @@ def generate_action_plan_pdf(
             Paragraph("- Confirm current road conditions before dispatch.", body_style),
             Paragraph("- Revalidate shelter occupancy and essential-resource capacity before movement.", body_style),
             Paragraph("- Prioritize vulnerable groups according to local disaster-management protocols.", body_style),
+            Paragraph("- Route estimates do not currently include live traffic, road closures or hazard avoidance.", body_style),
             Spacer(1, 4 * mm),
             Paragraph(
                 "Decision-support prototype only. Final evacuation, relocation and emergency decisions remain with authorized government authorities.",
