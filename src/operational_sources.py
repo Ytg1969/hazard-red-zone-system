@@ -1,8 +1,8 @@
 """Configurable authority-data adapters for operational habitation/site feeds.
 
-Configured HTTPS sources may return CSV or Point GeoJSON/JSON. A remote source
-is never assumed authoritative merely because it is reachable: callers must
-preserve source URL, LIVE/CACHED mode and validation results.
+Configured HTTPS sources may return CSV, XLSX, or Point GeoJSON/JSON. A remote
+source is never assumed authoritative merely because it is reachable: callers
+must preserve source URL, LIVE/CACHED mode and validation results.
 """
 from __future__ import annotations
 
@@ -10,15 +10,16 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
-from src.live_data import fetch_text_with_cache
+from src.live_data import fetch_bytes_with_cache, fetch_text_with_cache
 from src.operational_file_ingest import parse_operational_content
 from src.operational_workspace import normalize_operational_habitations, normalize_operational_shelters
 from src.schema_mapping import apply_field_mapping
 from src.url_safety import validate_public_https_url
 
 # Existing names are preserved for deployment compatibility even though sources
-# can now return either CSV or Point GeoJSON.
+# can return CSV, XLSX, or Point GeoJSON.
 HABITATION_URL_ENV = "SIH_HABITATION_CSV_URL"
 SHELTER_URL_ENV = "SIH_SHELTER_CSV_URL"
 HABITATION_FIELD_MAP_ENV = "SIH_HABITATION_FIELD_MAP"
@@ -29,9 +30,31 @@ def _require_https(url: str) -> str:
     return validate_public_https_url(url, purpose="operational feed")
 
 
-def _source_cache_path(kind: str, source_url: str) -> Path:
+def _source_cache_path(kind: str, source_url: str, *, binary: bool = False) -> Path:
     digest = hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:20]
-    return Path("data/cache/operational") / f"{kind}_{digest}.json"
+    suffix = ".bin" if binary else ".json"
+    return Path("data/cache/operational") / f"{kind}_{digest}{suffix}"
+
+
+def _is_xlsx_url(source_url: str) -> bool:
+    return urlparse(source_url).path.lower().endswith(".xlsx")
+
+
+def _format_for(source_url: str, payload) -> str:
+    if _is_xlsx_url(source_url):
+        return "xlsx"
+    if isinstance(payload, str) and payload.lstrip().startswith("{"):
+        return "geojson"
+    if isinstance(payload, (bytes, bytearray)) and bytes(payload).lstrip().startswith(b"{"):
+        return "geojson"
+    return "csv"
+
+
+def _fetch_source_envelope(*, source: str, source_url: str, cache_path: str | Path | None, kind: str):
+    is_xlsx = _is_xlsx_url(source_url)
+    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path(kind, source_url, binary=is_xlsx)
+    fetcher = fetch_bytes_with_cache if is_xlsx else fetch_text_with_cache
+    return fetcher(source=source, url=source_url, cache_path=resolved_cache, timeout=12.0)
 
 
 def configured_operational_urls() -> dict[str, str | None]:
@@ -56,25 +79,22 @@ def configured_field_mapping(kind: str) -> dict[str, str]:
 
 
 def _frame_from_envelope(envelope, source_url: str):
-    return parse_operational_content(str(envelope.payload), source_name=source_url)
+    return parse_operational_content(envelope.payload, source_name=source_url)
 
 
 def fetch_operational_preview(url: str, *, cache_path: str | Path | None = None) -> dict:
-    """Fetch a public CSV/Point-GeoJSON source without applying schema semantics.
+    """Fetch a public authority source without applying schema semantics.
 
-    This is intentionally a preview/discovery adapter for the Schema Mapper. It
-    validates the public HTTPS target and parses the transport payload, but it
-    does not rename fields, certify authority, add analytical provenance, or run
-    habitation/shelter production validation. The operator must explicitly map
-    source fields before the dataset can enter the operational workspace.
+    CSV, explicit `.xlsx`, and Point GeoJSON/JSON are supported. This adapter is
+    only for schema discovery: it does not rename fields, certify authority, add
+    analytical provenance, or run habitation/shelter production validation.
     """
     source_url = _require_https(url)
-    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path("preview", source_url)
-    envelope = fetch_text_with_cache(
+    envelope = _fetch_source_envelope(
         source="Operational schema preview",
-        url=source_url,
-        cache_path=resolved_cache,
-        timeout=12.0,
+        source_url=source_url,
+        cache_path=cache_path,
+        kind="preview",
     )
     frame = _frame_from_envelope(envelope, source_url)
     return {
@@ -83,18 +103,12 @@ def fetch_operational_preview(url: str, *, cache_path: str | Path | None = None)
         "stale": envelope.stale,
         "fetched_at": envelope.fetched_at,
         "source_url": source_url,
-        "format": "geojson" if str(envelope.payload).lstrip().startswith("{") else "csv",
+        "format": _format_for(source_url, envelope.payload),
     }
 
 
 def _apply_source_provenance(frame, *, envelope, source_url: str):
-    """Attach transport provenance without inventing an observation timestamp.
-
-    `fetched_at` only tells us when this application retrieved the source. It is
-    not evidence that population, occupancy, capacity, or another source field
-    was observed at that moment. Source-native `data_timestamp` is therefore
-    preserved when supplied and left absent when the source does not provide it.
-    """
+    """Attach transport provenance without inventing an observation timestamp."""
     frame = frame.copy()
     frame["data_mode"] = envelope.mode
     frame["source_fetched_at"] = envelope.fetched_at
@@ -105,12 +119,8 @@ def _apply_source_provenance(frame, *, envelope, source_url: str):
 
 def fetch_operational_habitations(url: str | None = None, *, cache_path: str | Path | None = None, field_mapping: dict[str, str] | None = None) -> dict:
     source_url = _require_https(url or os.getenv(HABITATION_URL_ENV) or "")
-    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path("habitations", source_url)
-    envelope = fetch_text_with_cache(
-        source="Configured habitation feed",
-        url=source_url,
-        cache_path=resolved_cache,
-        timeout=12.0,
+    envelope = _fetch_source_envelope(
+        source="Configured habitation feed", source_url=source_url, cache_path=cache_path, kind="habitations"
     )
     frame = _frame_from_envelope(envelope, source_url)
     mapping = field_mapping if field_mapping is not None else configured_field_mapping("habitation")
@@ -126,18 +136,14 @@ def fetch_operational_habitations(url: str | None = None, *, cache_path: str | P
         "source_url": source_url,
         "assessment": assessment,
         "field_mapping": mapping,
-        "format": "geojson" if str(envelope.payload).lstrip().startswith("{") else "csv",
+        "format": _format_for(source_url, envelope.payload),
     }
 
 
 def fetch_operational_shelters(url: str | None = None, *, cache_path: str | Path | None = None, field_mapping: dict[str, str] | None = None) -> dict:
     source_url = _require_https(url or os.getenv(SHELTER_URL_ENV) or "")
-    resolved_cache = Path(cache_path) if cache_path is not None else _source_cache_path("shelters", source_url)
-    envelope = fetch_text_with_cache(
-        source="Configured shelter / relocation-site feed",
-        url=source_url,
-        cache_path=resolved_cache,
-        timeout=12.0,
+    envelope = _fetch_source_envelope(
+        source="Configured shelter / relocation-site feed", source_url=source_url, cache_path=cache_path, kind="shelters"
     )
     frame = _frame_from_envelope(envelope, source_url)
     mapping = field_mapping if field_mapping is not None else configured_field_mapping("shelter")
@@ -153,5 +159,5 @@ def fetch_operational_shelters(url: str | None = None, *, cache_path: str | Path
         "source_url": source_url,
         "assessment": assessment,
         "field_mapping": mapping,
-        "format": "geojson" if str(envelope.payload).lstrip().startswith("{") else "csv",
+        "format": _format_for(source_url, envelope.payload),
     }

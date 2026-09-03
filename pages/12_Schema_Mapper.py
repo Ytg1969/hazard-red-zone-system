@@ -54,8 +54,8 @@ if source_mode == "Upload file":
             st.error(f"Could not parse authority dataset: {exc}")
 else:
     st.caption(
-        "Use a public HTTPS CSV or Point GeoJSON/JSON endpoint. Private-network targets and URLs containing embedded credentials are rejected. "
-        "Remote XLSX is not fetched by this text-feed adapter; download XLSX and use Upload file instead."
+        "Use a public HTTPS CSV, explicit .xlsx, or Point GeoJSON/JSON endpoint. Private-network targets and URLs containing embedded credentials are rejected. "
+        "XLSX uses the first worksheet only and is cached as binary data rather than being decoded as text."
     )
     remote_url = st.text_input("Authority dataset HTTPS URL", placeholder="https://data.example.gov.in/settlements.csv")
     if st.button("Fetch source fields", type="primary", width="stretch", disabled=not remote_url.strip()):
