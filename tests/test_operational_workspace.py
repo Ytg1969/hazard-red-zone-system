@@ -7,19 +7,20 @@ from src.operational_workspace import (
     normalize_operational_shelters,
     restore_workspace,
     serialize_workspace,
+    summarize_dataset_provenance,
 )
 
 
 def _habitations():
     return pd.DataFrame([
-        {"habitation_id": "H1", "name": "Village A", "latitude": 20.0, "longitude": 85.0, "population": 1000, "children_population": 180, "elderly_population": 90, "hazard_score": 70, "exposure_score": 65, "accessibility_score": 55, "data_mode": "LIVE", "data_timestamp": "2026-09-01T00:00:00Z", "source_context": "official-test"},
-        {"habitation_id": "H2", "name": "Village B", "latitude": 20.2, "longitude": 85.2, "population": 800, "children_population": 130, "elderly_population": 70, "hazard_score": 55, "exposure_score": 50, "accessibility_score": 45, "data_mode": "LIVE", "data_timestamp": "2026-09-01T00:00:00Z", "source_context": "official-test"},
+        {"habitation_id": "H1", "name": "Village A", "latitude": 20.0, "longitude": 85.0, "population": 1000, "children_population": 180, "elderly_population": 90, "hazard_score": 70, "exposure_score": 65, "accessibility_score": 55, "data_mode": "LIVE", "data_timestamp": "2026-09-01T00:00:00Z", "source_fetched_at": "2026-09-03T10:00:00Z", "source_context": "official-test"},
+        {"habitation_id": "H2", "name": "Village B", "latitude": 20.2, "longitude": 85.2, "population": 800, "children_population": 130, "elderly_population": 70, "hazard_score": 55, "exposure_score": 50, "accessibility_score": 45, "data_mode": "LIVE", "data_timestamp": "2026-09-01T00:00:00Z", "source_fetched_at": "2026-09-03T10:00:00Z", "source_context": "official-test"},
     ])
 
 
 def _shelters():
     return pd.DataFrame([
-        {"shelter_id": "S1", "name": "Site A", "latitude": 20.1, "longitude": 85.1, "total_capacity": 1200, "current_occupancy": 100, "water_capacity": 1000, "sanitation_capacity": 950, "access_capacity": 900, "safety_score": 90, "accessibility_score": 80, "data_mode": "LIVE", "data_timestamp": "2026-09-01T00:00:00Z", "source_context": "official-test"},
+        {"shelter_id": "S1", "name": "Site A", "latitude": 20.1, "longitude": 85.1, "total_capacity": 1200, "current_occupancy": 100, "water_capacity": 1000, "sanitation_capacity": 950, "access_capacity": 900, "safety_score": 90, "accessibility_score": 80, "data_mode": "LIVE", "data_timestamp": "2026-09-01T00:00:00Z", "source_fetched_at": "2026-09-03T10:02:00Z", "source_context": "official-test"},
     ])
 
 
@@ -33,6 +34,9 @@ def test_operational_workspace_round_trip():
     assert len(restored_h) == 2
     assert len(restored_s) == 1
     assert payload["habitation_mode"] == "LIVE"
+    assert payload["provenance"]["habitations"]["sources"] == ["official-test"]
+    assert payload["provenance"]["habitations"]["observation_timestamps"] == ["2026-09-01T00:00:00Z"]
+    assert payload["provenance"]["habitations"]["fetch_timestamps"] == ["2026-09-03T10:00:00Z"]
 
 
 def test_dataset_mode_does_not_upgrade_unverified_data():
@@ -45,3 +49,11 @@ def test_geographic_center_uses_uploaded_coordinates():
     lat, lon = geographic_center(_habitations())
     assert round(lat, 1) == 20.1
     assert round(lon, 1) == 85.1
+
+
+def test_provenance_summary_does_not_invent_missing_evidence():
+    summary = summarize_dataset_provenance(pd.DataFrame([{"data_mode": "LIVE"}]))
+    assert summary["mode"] == "LIVE"
+    assert summary["sources"] == []
+    assert summary["observation_timestamps"] == []
+    assert summary["fetch_timestamps"] == []
