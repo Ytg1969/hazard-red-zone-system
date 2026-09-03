@@ -143,6 +143,12 @@ def enrich_shelters(shelters: pd.DataFrame) -> pd.DataFrame:
             "effective_capacity": capacity["effective_capacity"],
             "available_capacity": capacity["available_capacity"],
             "capacity_validation_status": capacity["capacity_validation_status"],
+            "limiting_resource": capacity["limiting_resource"],
+            "limiting_resource_label": capacity["limiting_resource_label"],
+            "limiting_capacity": capacity["limiting_capacity"],
+            "capacity_evidence_completeness_pct": capacity["capacity_evidence_completeness_pct"],
+            "capacity_utilization_pct": capacity["capacity_utilization_pct"],
+            "missing_resource_fields": ", ".join(capacity["missing_resource_fields"]),
         })
         records.append(row)
     return pd.DataFrame(records)
