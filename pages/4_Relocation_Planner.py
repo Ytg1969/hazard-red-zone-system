@@ -92,7 +92,19 @@ if not ranked:
     render_disclaimer()
     st.stop()
 ranked_df = pd.DataFrame(ranked)
-show_cols = [c for c in ["shelter_name", "suitability_score", "distance_km", "safety_score", "accessibility_score", "available_capacity", "capacity_validation_status", "routing_mode"] if c in ranked_df.columns]
+show_cols = [c for c in [
+    "shelter_name",
+    "suitability_score",
+    "distance_km",
+    "safety_score",
+    "accessibility_score",
+    "available_capacity",
+    "limiting_resource_label",
+    "capacity_evidence_completeness_pct",
+    "capacity_utilization_pct",
+    "capacity_validation_status",
+    "routing_mode",
+] if c in ranked_df.columns]
 st.dataframe(ranked_df[show_cols], width="stretch", hide_index=True)
 
 visual_left, visual_right = st.columns(2, gap="large")
@@ -108,10 +120,22 @@ st.markdown("### 3 · Primary recommendation and population split")
 left, right = st.columns([1, 1.35], gap="large")
 with left:
     st.success(f"Recommended primary site: {recommended['shelter_name']}")
-    st.metric("Suitability", f"{recommended['suitability_score']:.1f}/100")
-    st.metric("Distance", f"{recommended['distance_km']:.2f} km")
-    st.metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
-    st.caption(f"Capacity evidence: {recommended['capacity_validation_status']}")
+    primary_metrics = st.columns(2)
+    primary_metrics[0].metric("Suitability", f"{recommended['suitability_score']:.1f}/100")
+    primary_metrics[1].metric("Distance", f"{recommended['distance_km']:.2f} km")
+    primary_metrics[0].metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
+    primary_metrics[1].metric("Capacity Use", f"{recommended.get('capacity_utilization_pct', 0):.1f}%")
+    st.caption(
+        f"Capacity evidence: **{recommended['capacity_validation_status']}** · "
+        f"{recommended.get('capacity_evidence_completeness_pct', 0):.1f}% resource evidence complete"
+    )
+    st.info(
+        f"Current limiting factor: **{recommended.get('limiting_resource_label', 'Unknown')}** "
+        f"at **{int(float(recommended.get('limiting_capacity', recommended['effective_capacity']))):,} people**."
+    )
+    missing = recommended.get("missing_resource_fields") or []
+    if missing:
+        st.warning("Missing capacity evidence: " + ", ".join(str(value).replace("_capacity", "").replace("_", " ").title() for value in missing))
 with right:
     allocation = allocate_population(habitation, local_shelters.to_dict(orient="records"))
     a1, a2, a3 = st.columns(3)
@@ -124,6 +148,23 @@ with right:
         st.warning("Safe capacity is insufficient; the deficit remains explicit rather than overfilling a site.")
     else:
         st.success("The current safe-site set can accommodate the full habitation population.")
+
+with st.expander("Carrying-capacity evidence across qualified sites", expanded=False):
+    evidence_cols = [c for c in [
+        "shelter_name",
+        "effective_capacity",
+        "available_capacity",
+        "limiting_resource_label",
+        "limiting_capacity",
+        "capacity_utilization_pct",
+        "capacity_evidence_completeness_pct",
+        "capacity_validation_status",
+    ] if c in ranked_df.columns]
+    st.dataframe(ranked_df[evidence_cols], width="stretch", hide_index=True)
+    st.caption(
+        "VALIDATED means water, sanitation and access/logistics sub-capacities are all known. "
+        "PARTIAL uses the minimum known constraint. UNVALIDATED falls back to total physical capacity. Unknown evidence is never treated as zero."
+    )
 
 st.markdown("### 4 · Shared-capacity allocation")
 st.caption("All priority habitations share one capacity ledger. The planner never double-books capacity; demonstration city boundaries are used only in fallback mode.")
