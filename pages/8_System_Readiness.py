@@ -1,12 +1,13 @@
 import pandas as pd
 import streamlit as st
 
+from src.cutover_readiness import assess_cutover_readiness
 from src.data_contracts import assess_habitation_dataset, assess_shelter_dataset
 from src.live_operations import fetch_operations_snapshot
 from src.location_context import search_locations
 from src.operational_file_ingest import read_operational_upload
 from src.provenance import default_provenance_register, source_health
-from src.streamlit_workspace import resolve_operational_workspace
+from src.streamlit_workspace import operational_data_required, resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_page_header
 
 st.set_page_config(page_title="System Readiness", page_icon="OPS", layout="wide")
@@ -111,6 +112,54 @@ elif location is None:
     st.info("Activate operational data or resolve a location before running source-health checks.")
 else:
     st.info("Run the health check to inspect current external-source availability and freshness.")
+
+st.divider()
+st.markdown("### Production cutover readiness")
+st.caption(
+    "This gate answers a narrow technical question: can bundled DEMO analytical fallbacks be disabled without weakening data, hazard or carrying-capacity contracts? "
+    "It does not certify an authority source or approve relocation decisions."
+)
+if resolved:
+    hazard_ready = False
+    hazard_label = "No reviewed/calibrated analytical hazard source active"
+    try:
+        active_hazard = resolve_operational_hazard(auto_configured=True)
+        if active_hazard:
+            hazard_ready = True
+            hazard_label = str(active_hazard.get("label") or "Reviewed/calibrated hazard source")
+    except Exception as exc:
+        hazard_label = f"Hazard source unavailable: {exc}"
+
+    cutover = assess_cutover_readiness(
+        resolved["habitations"],
+        resolved["shelters"],
+        hazard_ready=hazard_ready,
+    )
+    metrics = st.columns(4)
+    metrics[0].metric("Technical readiness", f"{cutover['readiness_pct']:.0f}%")
+    metrics[1].metric("Checks passed", f"{cutover['passed_checks']} / {cutover['total_checks']}")
+    metrics[2].metric("Strict mode", "ON" if operational_data_required() else "OFF")
+    metrics[3].metric("Hazard gate", "READY" if hazard_ready else "BLOCKED")
+    st.caption(f"Hazard evidence: {hazard_label}")
+
+    for check in cutover["checks"]:
+        with st.container(border=True):
+            a, b = st.columns([4, 1])
+            with a:
+                st.markdown(f"**{check['label']}**")
+                st.caption(check["detail"])
+            with b:
+                st.markdown("**PASS**" if check["pass"] else "**BLOCKED**")
+
+    if cutover["ready_for_demo_removal"]:
+        st.success(
+            "All technical cutover gates pass. The deployment can enable SIH_REQUIRE_OPERATIONAL_DATA=true after source ownership, update cadence and administrative review are confirmed."
+        )
+    else:
+        blocked = [check["label"] for check in cutover["checks"] if not check["pass"]]
+        st.warning("Do not remove bundled fallbacks yet. Blocking gates: " + "; ".join(blocked))
+else:
+    st.info("Activate validated operational habitation and relocation-site data to evaluate production cutover readiness.")
 
 st.divider()
 st.markdown("### Production dataset inspector")
