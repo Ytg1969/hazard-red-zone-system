@@ -51,6 +51,31 @@ def geographic_center(df: pd.DataFrame) -> tuple[float, float]:
     return float(lat.mean()), float(lon.mean())
 
 
+def summarize_dataset_provenance(df: pd.DataFrame) -> dict[str, Any]:
+    """Create a compact, non-invented provenance summary for reports/UI.
+
+    Only values actually present in the operational dataset are surfaced.
+    HTTP retrieval time (`source_fetched_at`) remains distinct from the source's
+    own observation/reference timestamp (`data_timestamp`).
+    """
+    summary: dict[str, Any] = {"mode": dataset_mode(df), "rows": int(len(df))}
+    for column, key in [
+        ("source_context", "sources"),
+        ("data_timestamp", "observation_timestamps"),
+        ("source_fetched_at", "fetch_timestamps"),
+    ]:
+        if column not in df.columns:
+            summary[key] = []
+            continue
+        values = []
+        for value in df[column].dropna().tolist():
+            text = str(value).strip()
+            if text and text not in values:
+                values.append(text)
+        summary[key] = values[:10]
+    return summary
+
+
 def serialize_workspace(habitations: pd.DataFrame, shelters: pd.DataFrame, *, label: str) -> dict[str, Any]:
     lat, lon = geographic_center(habitations)
     return {
@@ -60,6 +85,10 @@ def serialize_workspace(habitations: pd.DataFrame, shelters: pd.DataFrame, *, la
         "shelters": shelters.to_dict(orient="records"),
         "habitation_mode": dataset_mode(habitations),
         "shelter_mode": dataset_mode(shelters),
+        "provenance": {
+            "habitations": summarize_dataset_provenance(habitations),
+            "shelters": summarize_dataset_provenance(shelters),
+        },
         "center": {"latitude": lat, "longitude": lon},
     }
 
