@@ -30,8 +30,8 @@ required_fields = canonical_fields(canonical_kind)
 
 upload = st.file_uploader(
     "Upload authority dataset",
-    type=["csv", "geojson", "json"],
-    help="CSV or Point GeoJSON/JSON. Point geometry supplies latitude and longitude before mapping.",
+    type=["csv", "xlsx", "geojson", "json"],
+    help="CSV, XLSX, or Point GeoJSON/JSON. XLSX uses the first worksheet only; Point geometry supplies latitude and longitude before mapping.",
 )
 
 if upload is None:
