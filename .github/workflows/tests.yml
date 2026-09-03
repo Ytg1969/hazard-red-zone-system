@@ -41,3 +41,6 @@ jobs:
 
       - name: Run deterministic demo gate
         run: python scripts/demo_gate.py
+
+      - name: Run offline production gate
+        run: python scripts/production_gate.py
