@@ -6,28 +6,33 @@ contracts that must remain true even when every external source is unavailable.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from src.live_alerts import fetch_disaster_alerts
-from src.ogc_sources import parse_wms_capabilities
-from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
-from src.provenance import default_provenance_register
-from src.risk_engine import DEFAULT_WEIGHTS
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.live_alerts import fetch_disaster_alerts  # noqa: E402
+from src.ogc_sources import parse_wms_capabilities  # noqa: E402
+from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards  # noqa: E402
+from src.provenance import default_provenance_register  # noqa: E402
+from src.risk_engine import DEFAULT_WEIGHTS  # noqa: E402
 
 REQUIRED_PAGES = [
-    "app.py",
-    "pages/0_Operations_Hub.py",
-    "pages/1_Command_Center.py",
-    "pages/2_Red_Zone_Map.py",
-    "pages/3_Risk_Analysis.py",
-    "pages/4_Relocation_Planner.py",
-    "pages/5_Scenario_Studio.py",
-    "pages/6_Methodology.py",
-    "pages/7_Live_Data_Context.py",
-    "pages/8_System_Readiness.py",
-    "pages/9_Operational_Data.py",
-    "pages/10_GIS_Source_Inspector.py",
-    "pages/11_Calibrated_Hazard_Source.py",
+    ROOT / "app.py",
+    ROOT / "pages/0_Operations_Hub.py",
+    ROOT / "pages/1_Command_Center.py",
+    ROOT / "pages/2_Red_Zone_Map.py",
+    ROOT / "pages/3_Risk_Analysis.py",
+    ROOT / "pages/4_Relocation_Planner.py",
+    ROOT / "pages/5_Scenario_Studio.py",
+    ROOT / "pages/6_Methodology.py",
+    ROOT / "pages/7_Live_Data_Context.py",
+    ROOT / "pages/8_System_Readiness.py",
+    ROOT / "pages/9_Operational_Data.py",
+    ROOT / "pages/10_GIS_Source_Inspector.py",
+    ROOT / "pages/11_Calibrated_Hazard_Source.py",
 ]
 
 _WMS_SAMPLE = """<WMS_Capabilities version='1.3.0' xmlns='http://www.opengis.net/wms'>
@@ -44,7 +49,7 @@ def run_gate() -> dict:
         "value": DEFAULT_WEIGHTS,
     }
 
-    missing_pages = [path for path in REQUIRED_PAGES if not Path(path).exists()]
+    missing_pages = [str(path.relative_to(ROOT)) for path in REQUIRED_PAGES if not path.exists()]
     result["checks"]["required_pages"] = {"pass": not missing_pages, "missing": missing_pages}
 
     habitations_raw, shelters_raw = load_demo_data()
