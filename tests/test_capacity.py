@@ -12,6 +12,11 @@ def test_limiting_resource_capacity():
     assert result["effective_capacity"] == 900.0
     assert result["available_capacity"] == 700.0
     assert result["capacity_validation_status"] == "VALIDATED"
+    assert result["limiting_resource"] == "water_capacity"
+    assert result["limiting_resource_label"] == "Water"
+    assert result["limiting_capacity"] == 900.0
+    assert result["capacity_evidence_completeness_pct"] == 100.0
+    assert result["capacity_utilization_pct"] == 22.2
 
 
 def test_partial_capacity_uses_known_constraints():
@@ -24,6 +29,8 @@ def test_partial_capacity_uses_known_constraints():
     assert result["effective_capacity"] == 800.0
     assert result["available_capacity"] == 700.0
     assert result["capacity_validation_status"] == "PARTIAL"
+    assert result["limiting_resource"] == "water_capacity"
+    assert result["capacity_evidence_completeness_pct"] == 33.3
     assert "sanitation_capacity" in result["missing_resource_fields"]
     assert "access_capacity" in result["missing_resource_fields"]
 
@@ -33,8 +40,26 @@ def test_total_capacity_fallback_is_unvalidated():
     assert result["effective_capacity"] == 500.0
     assert result["available_capacity"] == 400.0
     assert result["capacity_validation_status"] == "UNVALIDATED"
+    assert result["limiting_resource"] == "total_capacity"
+    assert result["limiting_resource_label"] == "Physical space"
+    assert result["capacity_evidence_completeness_pct"] == 0.0
 
 
-def test_available_capacity_never_negative():
+def test_total_capacity_can_be_the_limiting_ceiling_even_when_resources_are_known():
+    result = calculate_capacity({
+        "total_capacity": 400,
+        "current_occupancy": 100,
+        "water_capacity": 900,
+        "sanitation_capacity": 700,
+        "access_capacity": 800,
+    })
+    assert result["capacity_validation_status"] == "VALIDATED"
+    assert result["effective_capacity"] == 400.0
+    assert result["limiting_resource"] == "total_capacity"
+    assert result["limiting_resource_label"] == "Physical space"
+
+
+def test_available_capacity_never_negative_and_overuse_remains_visible():
     result = calculate_capacity({"total_capacity": 100, "current_occupancy": 150})
     assert result["available_capacity"] == 0.0
+    assert result["capacity_utilization_pct"] == 150.0
