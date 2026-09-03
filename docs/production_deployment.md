@@ -14,12 +14,23 @@ This application is a decision-support prototype being hardened for live operati
 
 - `SIH_HABITATION_CSV_URL` — optional HTTPS URL for a validated operational habitation/settlement feed. Despite the compatibility name, the endpoint may return CSV or Point GeoJSON/JSON. Configured feeds are validated and can bootstrap new browser sessions through the Streamlit server cache.
 - `SIH_SHELTER_CSV_URL` — optional HTTPS URL for a validated operational shelter/relocation-site feed. CSV and Point GeoJSON/JSON are supported.
+- `SIH_HABITATION_FIELD_MAP` — optional JSON object mapping the project's canonical habitation fields to source column names when an authority export uses different headers.
+- `SIH_SHELTER_FIELD_MAP` — optional JSON object mapping canonical relocation-site fields to source column names.
 - `SIH_HAZARD_GEOJSON_URL` — optional HTTPS GeoJSON hazard source. Every feature must contain a numeric `hazard_score` in the range 0–100.
 - `SIH_HAZARD_CALIBRATION_CONFIRMED=true` — mandatory gate before a configured hazard GeoJSON can supply the analytical H component. Do not set this until the class/value mapping is documented and reviewed.
 - `SIH_HAZARD_SOURCE_LABEL` — optional human-readable source/layer label for hazard provenance.
 - `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains explicitly unconfigured rather than fabricating identifiers or alerts.
 - `SIH_ROAD_GRAPHML` — optional local OSM GraphML road-network path. If absent, routing can fall through to OSRM and then explicit straight-line fallback.
 - `SIH_REQUIRE_OPERATIONAL_DATA=true` — strict production mode. When enabled, pages that require habitation/shelter analysis stop instead of falling back to bundled synthetic demo cities if validated operational data is unavailable.
+
+Field mapping is explicit rather than heuristic at activation time. Example:
+
+```toml
+SIH_HABITATION_FIELD_MAP = '{"habitation_id":"Village Code","name":"Village Name","latitude":"Lat","longitude":"Long","population":"TOT_POP","children_population":"Age 0-6","elderly_population":"Age 60 Plus"}'
+SIH_SHELTER_FIELD_MAP = '{"shelter_id":"Facility ID","name":"Facility Name","latitude":"Latitude","longitude":"Longitude","total_capacity":"Rated Capacity","current_occupancy":"Current Occupancy"}'
+```
+
+The application may suggest common aliases to help an operator prepare this mapping, but it does not silently reinterpret ambiguous fields. A source column cannot populate two canonical fields.
 
 Do not enable `SIH_REQUIRE_OPERATIONAL_DATA=true` until both operational settlement and relocation-site feeds are configured and tested. It is a final cutover switch, not a substitute for real data.
 
@@ -83,6 +94,8 @@ All three must pass. Pull requests also run a Python 3.12 deployment smoke workf
 `pages/9_Operational_Data.py` is the migration path from bundled demonstration cities to real authority datasets. It supports operator-uploaded CSV or Point GeoJSON/JSON datasets, configured HTTPS CSV/Point GeoJSON feeds, and a calibrated GeoJSON hazard layer. The application validates required fields, coordinates, population/capacity integrity, carrying-capacity evidence and provenance before activation.
 
 For Point GeoJSON habitation/site inputs, coordinates are read from feature geometry. Non-Point geometries are rejected instead of being silently centroided because centroid selection can change the analytical and routing meaning of an official feature.
+
+Canonical habitation fields are `habitation_id`, `name`, `latitude`, `longitude`, `population`, `children_population`, and `elderly_population`. Canonical relocation-site fields are `shelter_id`, `name`, `latitude`, `longitude`, `total_capacity`, and `current_occupancy`. Authority feeds with different headers should use the explicit field-map variables above rather than editing source data or relying on guessed semantics.
 
 Bundled Puri/Guwahati/Chennai records must remain fallback-only until a chosen study area's authoritative habitation, shelter and calibrated hazard inputs can drive every core page. Do not relabel fallback data as real. Once the end-to-end replacement is tested, enable strict operational mode and then remove the bundled fallback in a later cleanup release.
 
