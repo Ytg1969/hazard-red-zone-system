@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pandas as pd
+
 import scripts.field_preflight as field_preflight
 
 
@@ -96,42 +98,6 @@ def test_validate_puri_route_requires_cached_graph_mode(monkeypatch, tmp_path: P
     puri_path.write_bytes(b"graph")
     road_state = field_preflight._road_cache_state(tmp_path)
 
-    class FakeFrame:
-        empty = False
-        columns = ["demo_city"]
-
-        def __init__(self, records):
-            self.records = records
-
-        def sort_values(self, *args, **kwargs):
-            return self
-
-        @property
-        def iloc(self):
-            class _ILoc:
-                def __init__(self, record):
-                    self.record = record
-
-                def __getitem__(self, index):
-                    class _Row(dict):
-                        def to_dict(self):
-                            return dict(self)
-
-                    return _Row(self.record)
-
-            return _ILoc(self.records[0])
-
-        def __getitem__(self, key):
-            if isinstance(key, list):
-                return self
-            return [record.get(key) for record in self.records]
-
-        def copy(self):
-            return self
-
-        def to_dict(self, orient=None):
-            return list(self.records)
-
     habitation = {
         "name": "Puri Coastal Cluster A",
         "latitude": 19.7983,
@@ -139,6 +105,7 @@ def test_validate_puri_route_requires_cached_graph_mode(monkeypatch, tmp_path: P
         "risk_score": 80.0,
         "demo_city": "Puri",
     }
+    shelter_frame = pd.DataFrame([{"demo_city": "Puri"}])
     shelter = {
         "shelter_name": "Puri Demo Cyclone Shelter A",
         "latitude": 19.815,
@@ -148,11 +115,11 @@ def test_validate_puri_route_requires_cached_graph_mode(monkeypatch, tmp_path: P
     monkeypatch.setattr(
         field_preflight,
         "load_demo_data",
-        lambda city: (FakeFrame([habitation]), FakeFrame([{"demo_city": "Puri"}])),
+        lambda city: (pd.DataFrame([habitation]), shelter_frame),
     )
     monkeypatch.setattr(field_preflight, "load_demo_hazards", lambda: object())
-    monkeypatch.setattr(field_preflight, "enrich_habitations", lambda *args, **kwargs: FakeFrame([habitation]))
-    monkeypatch.setattr(field_preflight, "enrich_shelters", lambda *args, **kwargs: FakeFrame([{"demo_city": "Puri"}]))
+    monkeypatch.setattr(field_preflight, "enrich_habitations", lambda *args, **kwargs: pd.DataFrame([habitation]))
+    monkeypatch.setattr(field_preflight, "enrich_shelters", lambda *args, **kwargs: shelter_frame)
     monkeypatch.setattr(field_preflight, "rank_shelters", lambda *args, **kwargs: [shelter])
     monkeypatch.setattr(
         field_preflight,
