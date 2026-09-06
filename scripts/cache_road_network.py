@@ -4,8 +4,9 @@ Run this while internet access is available. Large GraphML files normally stay
 outside Git and can be regenerated from the documented place names.
 
 Public Nominatim/Overpass services can be slow or transiently unavailable, so
-requests are explicitly bounded and retried. A failed download still fails the
-release workflow; this module never fabricates or substitutes road geometry.
+requests are explicitly bounded and retried across multiple documented global
+Overpass instances. A failed download still fails the release workflow; this
+module never fabricates or substitutes road geometry.
 """
 
 from pathlib import Path
@@ -22,8 +23,15 @@ DEMO_CITY_PLACES = {
     "Chennai": "Chennai, Tamil Nadu, India",
 }
 
-DEFAULT_ATTEMPTS = 2
-DEFAULT_REQUEST_TIMEOUT = 150
+# Current global public instances listed by the OpenStreetMap Overpass API wiki.
+# OSMnx expects the API base path without the trailing /interpreter endpoint.
+OVERPASS_URLS = (
+    "https://overpass-api.de/api",
+    "https://overpass.private.coffee/api",
+    "https://maps.mail.ru/osm/tools/overpass/api",
+)
+DEFAULT_ATTEMPTS = len(OVERPASS_URLS)
+DEFAULT_REQUEST_TIMEOUT = 120
 DEFAULT_RETRY_DELAY = 15.0
 
 
@@ -38,11 +46,20 @@ def _configure_osmnx(request_timeout: int) -> None:
     ox.settings.use_cache = True
 
 
-def _retry(operation, *, label: str, attempts: int, retry_delay: float):
+def _retry(
+    operation,
+    *,
+    label: str,
+    attempts: int,
+    retry_delay: float,
+    before_attempt=None,
+):
     attempts = max(1, int(attempts))
     retry_delay = max(0.0, float(retry_delay))
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
+        if before_attempt is not None:
+            before_attempt(attempt)
         try:
             return operation()
         except Exception as exc:
@@ -61,6 +78,13 @@ def _retry(operation, *, label: str, attempts: int, retry_delay: float):
     raise RuntimeError(f"Road cache failed for {label} after {attempts} attempt(s): {last_error}") from last_error
 
 
+def _overpass_selector(attempt: int) -> str:
+    url = OVERPASS_URLS[(max(1, int(attempt)) - 1) % len(OVERPASS_URLS)]
+    ox.settings.overpass_url = url
+    print(f"Using Overpass endpoint: {url}", flush=True)
+    return url
+
+
 def cache_network(
     place: str,
     output_dir: str | Path = "data/cache/roads",
@@ -76,7 +100,13 @@ def cache_network(
     def build_graph():
         return ox.graph_from_place(place, network_type="drive", simplify=True)
 
-    graph = _retry(build_graph, label=place, attempts=attempts, retry_delay=retry_delay)
+    graph = _retry(
+        build_graph,
+        label=place,
+        attempts=attempts,
+        retry_delay=retry_delay,
+        before_attempt=_overpass_selector,
+    )
     output_path = output_dir / f"{safe_filename(place)}.graphml"
     ox.save_graphml(graph, filepath=output_path)
     return output_path
@@ -115,7 +145,13 @@ def cache_network_from_bbox(
                 simplify=True,
             )
 
-    graph = _retry(build_graph, label=name, attempts=attempts, retry_delay=retry_delay)
+    graph = _retry(
+        build_graph,
+        label=name,
+        attempts=attempts,
+        retry_delay=retry_delay,
+        before_attempt=_overpass_selector,
+    )
     output_path = output_dir / f"{safe_filename(name)}.graphml"
     ox.save_graphml(graph, filepath=output_path)
     return output_path
