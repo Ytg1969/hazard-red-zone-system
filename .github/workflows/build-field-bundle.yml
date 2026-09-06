@@ -15,7 +15,7 @@ on:
 jobs:
   windows-field-bundle:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: Checkout repository
@@ -61,35 +61,43 @@ jobs:
 
           Copy-Item wheelhouse field-bundle\wheelhouse -Recurse
           Copy-Item field_preflight.json field-bundle\field_preflight.json
+          Copy-Item scripts\windows\INSTALL_OFFLINE.ps1 field-bundle\INSTALL_OFFLINE.ps1
+          Copy-Item scripts\windows\START_OFFLINE.cmd field-bundle\START_OFFLINE.cmd
 
           @"
           HAZARD COMMAND — WINDOWS OFFLINE FIELD BUNDLE
 
           Target runtime: 64-bit Windows with Python 3.12 already installed.
           This bundle contains the application, an offline Windows wheelhouse,
-          and the requested OpenStreetMap GraphML road cache.
+          the requested OpenStreetMap GraphML road cache, and two launch helpers.
 
-          1. Open PowerShell in this extracted folder.
-          2. Install dependencies without internet:
+          FIRST TIME ON EACH LAPTOP
+          -------------------------
+          1. Right-click INSTALL_OFFLINE.ps1 and choose Run with PowerShell.
+             It creates hazard-red-zone-system\.venv, installs only from the
+             bundled wheelhouse, and requires strict cached-road preflight to pass.
 
-             py -3.12 -m pip install --no-index --find-links wheelhouse -r hazard-red-zone-system\requirements.txt
+          EVERY DEMO / REHEARSAL
+          ----------------------
+          2. Double-click START_OFFLINE.cmd.
+             It reruns strict field preflight, then starts Streamlit in OFFLINE/LAN mode.
 
-          3. Enter the project:
+          3. Keep the command window open while using the app.
+          4. Put the phone on the same Wi-Fi/hotspot and open the LAN URL printed by the launcher.
 
-             cd hazard-red-zone-system
-
-          4. Prove the laptop is field-ready:
-
-             py -3.12 scripts\field_preflight.py --strict-road-cache
-
-          5. Start the no-internet/LAN app:
-
-             py -3.12 scripts\run_offline.py
-
-          6. Put the phone on the same Wi-Fi/hotspot and open the LAN URL printed by the launcher.
-
+          Manual fallback commands are documented in docs\build_field_bundle.md.
           Keep field_preflight.json with the bundle as the build-time readiness record.
           "@ | Set-Content -Encoding UTF8 field-bundle\README_FIRST.txt
+
+      - name: Prove bundle installer works offline
+        shell: pwsh
+        run: |
+          & .\field-bundle\INSTALL_OFFLINE.ps1
+          if (-not (Test-Path .\field-bundle\INSTALL_OK.txt)) {
+            throw "Bundle installer did not produce INSTALL_OK.txt"
+          }
+          Remove-Item .\field-bundle\hazard-red-zone-system\.venv -Recurse -Force
+          Remove-Item .\field-bundle\INSTALL_OK.txt -Force
 
       - name: Upload offline field bundle
         uses: actions/upload-artifact@v4

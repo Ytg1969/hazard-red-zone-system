@@ -9,7 +9,9 @@ The bundle contains:
 - a generated OpenStreetMap GraphML road cache for Puri by default;
 - optional road caches for all three bundled demo cities;
 - a strict field-preflight JSON report;
-- a `README_FIRST.txt` with no-internet installation and launch commands.
+- `INSTALL_OFFLINE.ps1` for first-time offline installation into an isolated `.venv`;
+- `START_OFFLINE.cmd` for strict-preflight + LAN launch on every rehearsal/demo;
+- a `README_FIRST.txt` with the shortest event-day sequence.
 
 Python 3.12 itself is **not** embedded; install 64-bit Python 3.12 on the competition laptop before going fully offline.
 
@@ -30,22 +32,44 @@ The workflow intentionally fails instead of uploading a bundle if:
 - a required Windows wheel cannot be downloaded;
 - the requested road graph cannot be generated;
 - the Puri GraphML cannot be loaded and used to compute a real `cached_osm_graph` route between a bundled Puri habitation and a safety/capacity-qualified shelter;
-- the deterministic demo or offline production gate fails during strict preflight.
+- the deterministic demo or offline production gate fails during strict preflight;
+- `INSTALL_OFFLINE.ps1` cannot create a clean Windows `.venv`, install entirely from the bundled wheelhouse, and pass strict field preflight.
+
+The temporary validation `.venv` created on the GitHub runner is deleted before upload, so the downloaded artifact remains portable between Windows laptops. Each laptop creates its own local `.venv` during installation.
 
 This means `Road-aware Puri routing: READY` proves more than file presence: the same cached-routing path used by the app successfully produced a road-network route without live OSRM.
 
 Because road generation depends on public OpenStreetMap/Overpass services, a transient upstream failure can require rerunning the manual workflow. Do not interpret a failed road-download run as a failure of the offline application itself.
 
-## Install from the bundle with no internet
+## First-time setup on each competition laptop
 
-Open PowerShell in the extracted artifact directory:
+After extracting the artifact, right-click `INSTALL_OFFLINE.ps1` and choose **Run with PowerShell**.
+
+It will:
+
+1. require Python 3.12;
+2. create `hazard-red-zone-system\.venv`;
+3. install dependencies using `--no-index` and only the bundled `wheelhouse`;
+4. run `field_preflight.py --strict-road-cache`;
+5. write `INSTALL_OK.txt` only when the strict field gate passes.
+
+No internet is required for these steps.
+
+If PowerShell execution policy blocks the script, open PowerShell in the bundle folder and run:
 
 ```powershell
-py -3.12 -m pip install --no-index --find-links wheelhouse -r hazard-red-zone-system\requirements.txt
-cd hazard-red-zone-system
-py -3.12 scripts\field_preflight.py --strict-road-cache
-py -3.12 scripts\run_offline.py
+powershell -ExecutionPolicy Bypass -File .\INSTALL_OFFLINE.ps1
 ```
+
+## Every rehearsal / demo
+
+Double-click:
+
+```text
+START_OFFLINE.cmd
+```
+
+The launcher refuses to start if the local `.venv` is missing or strict field preflight fails. When it passes, it starts Streamlit in explicit OFFLINE/LAN mode and prints the laptop and phone URLs.
 
 The preflight should report:
 
@@ -57,7 +81,19 @@ Overall field gate: PASS
 
 It also prints the validated Puri habitation → shelter sample route, distance and `cached_osm_graph` provenance.
 
-Then open the laptop URL printed by the launcher. Put the phone on the same Wi-Fi/hotspot and open the printed LAN URL.
+Put the phone on the same Wi-Fi/hotspot and open the LAN URL printed by the launcher.
+
+## Manual fallback commands
+
+If the helper scripts cannot be used, open PowerShell in the extracted bundle root:
+
+```powershell
+py -3.12 -m venv hazard-red-zone-system\.venv
+hazard-red-zone-system\.venv\Scripts\python.exe -m pip install --no-index --find-links wheelhouse -r hazard-red-zone-system\requirements.txt
+cd hazard-red-zone-system
+.\.venv\Scripts\python.exe scripts\field_preflight.py --strict-road-cache
+.\.venv\Scripts\python.exe scripts\run_offline.py
+```
 
 ## What to archive locally
 
