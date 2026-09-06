@@ -11,7 +11,15 @@ from src.report_generator import generate_action_plan, generate_action_plan_pdf
 from src.risk_engine import calculate_risk
 from src.runtime_mode import offline_mode
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
-from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
+from src.ui_theme import (
+    inject_global_css,
+    render_data_mode_indicator,
+    render_demo_scope_controls,
+    render_disclaimer,
+    render_kpi_strip,
+    render_page_header,
+    render_risk_badge,
+)
 
 st.set_page_config(page_title="Relocation Planner", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
@@ -76,13 +84,12 @@ data_mode = workspace.get("habitation_mode", "UNVERIFIED") if operational else "
 if data_mode not in {"LIVE", "CACHED", "DEMO"}:
     data_mode = "DEMO"
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Population", f"{int(habitation['population']):,}")
-m2.metric("Risk Score", f"{risk['risk_score']:.1f}/100")
-with m3:
-    st.caption("Risk Level")
-    render_risk_badge(risk["risk_level"])
-m4.metric("Relocation Priority", habitation["relocation_priority"])
+render_kpi_strip([
+    ("Population", f"{int(habitation['population']):,}", "Selected habitation"),
+    ("Risk Score", f"{risk['risk_score']:.1f}/100", risk["risk_level"]),
+    ("Relocation Priority", habitation["relocation_priority"], "Decision-support priority"),
+])
+render_risk_badge(risk["risk_level"])
 st.caption(f"Operational scope: **{area_label}** · Hazard profile: **{hazard_profile.replace('_', ' ').title()}**")
 if operational and hazard_source:
     st.caption(f"Calibrated hazard source: **{hazard_source.get('label', 'GeoJSON')}** · {hazard_source.get('mode', 'SESSION')}")
@@ -132,14 +139,16 @@ st.markdown("### 3 · Primary recommendation")
 left, right = st.columns([1, 1.35], gap="large")
 with left:
     st.success(f"Recommended primary site: {recommended['shelter_name']}")
-    primary_metrics = st.columns(2)
-    primary_metrics[0].metric("Suitability", f"{recommended['suitability_score']:.1f}/100")
-    primary_metrics[1].metric("Distance", f"{recommended['distance_km']:.2f} km")
-    primary_metrics[0].metric("Available Capacity", f"{int(recommended['available_capacity']):,}")
-    primary_metrics[1].metric("Capacity Use", f"{recommended.get('capacity_utilization_pct', 0):.1f}%")
     travel_time = recommended.get("travel_time_min")
+    recommendation_metrics = [
+        ("Suitability", f"{recommended['suitability_score']:.1f}/100", "Qualified-site score"),
+        ("Distance", f"{recommended['distance_km']:.2f} km", str(recommended.get("routing_mode", "unknown"))),
+        ("Available Capacity", f"{int(recommended['available_capacity']):,}", "After limiting-resource constraints"),
+        ("Capacity Use", f"{recommended.get('capacity_utilization_pct', 0):.1f}%", "At current assignment"),
+    ]
     if travel_time is not None:
-        st.metric("Estimated Road Travel Time", f"{float(travel_time):.1f} min")
+        recommendation_metrics.append(("Road Travel Time", f"{float(travel_time):.1f} min", str(recommended.get("route_status", "UNKNOWN"))))
+    render_kpi_strip(recommendation_metrics)
     st.caption(
         f"Route provenance: **{recommended.get('routing_mode', 'unknown')}** · "
         f"{recommended.get('route_status', 'UNKNOWN')}"
@@ -163,10 +172,11 @@ with left:
 with right:
     st.markdown("#### Population allocation")
     allocation = allocate_population(habitation, local_shelters.to_dict(orient="records"))
-    a1, a2, a3 = st.columns(3)
-    a1.metric("Required", f"{allocation['required_population']:,}")
-    a2.metric("Allocated", f"{allocation['allocated_population']:,}")
-    a3.metric("Remaining Deficit", f"{allocation['remaining_deficit']:,}")
+    render_kpi_strip([
+        ("Required", f"{allocation['required_population']:,}", "Population requiring allocation"),
+        ("Allocated", f"{allocation['allocated_population']:,}", "Assigned to qualified sites"),
+        ("Remaining Deficit", f"{allocation['remaining_deficit']:,}", "Never hidden or overfilled"),
+    ])
     if allocation["allocations"]:
         st.dataframe(pd.DataFrame(allocation["allocations"]), width="stretch", hide_index=True)
     if allocation["remaining_deficit"] > 0:
@@ -228,10 +238,11 @@ with st.expander("Route provenance across qualified sites", expanded=False):
 st.markdown("### 4 · Shared-capacity allocation")
 st.caption("All priority habitations share one capacity ledger. The planner never double-books capacity; demonstration city boundaries are used only in fallback mode.")
 batch = plan_batch_relocation(habitations, shelters)
-b1, b2, b3 = st.columns(3)
-b1.metric("Priority Population", f"{batch['required_population']:,}")
-b2.metric("Batch Allocated", f"{batch['allocated_population']:,}")
-b3.metric("Batch Deficit", f"{batch['remaining_deficit']:,}")
+render_kpi_strip([
+    ("Priority Population", f"{batch['required_population']:,}", "Population included in batch plan"),
+    ("Batch Allocated", f"{batch['allocated_population']:,}", "Shared capacity ledger"),
+    ("Batch Deficit", f"{batch['remaining_deficit']:,}", "Explicit unmet safe capacity"),
+])
 if batch["allocations"]:
     st.dataframe(pd.DataFrame(batch["allocations"]), width="stretch", hide_index=True)
 if batch["unallocated"]:
@@ -241,10 +252,11 @@ if batch["unallocated"]:
 with st.expander("Experimental global optimization comparison", expanded=False):
     st.caption("Network-simplex only considers candidates that already pass safety/capacity gates. It is not an autonomous evacuation order.")
     optimized = optimize_relocation_flow(habitations, shelters)
-    o1, o2, o3 = st.columns(3)
-    o1.metric("Required", f"{optimized['required_population']:,}")
-    o2.metric("Globally Allocated", f"{optimized['allocated_population']:,}")
-    o3.metric("Deficit", f"{optimized['remaining_deficit']:,}")
+    render_kpi_strip([
+        ("Required", f"{optimized['required_population']:,}", "Priority population"),
+        ("Globally Allocated", f"{optimized['allocated_population']:,}", "Network-simplex comparison"),
+        ("Deficit", f"{optimized['remaining_deficit']:,}", "Unmet qualified capacity"),
+    ])
     if optimized["allocations"]:
         st.dataframe(pd.DataFrame(optimized["allocations"]), width="stretch", hide_index=True)
     st.caption(optimized.get("note", ""))

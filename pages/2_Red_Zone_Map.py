@@ -12,7 +12,16 @@ from src.relocation import rank_shelters
 from src.routing import estimate_route
 from src.runtime_mode import offline_mode
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
-from src.ui_theme import RISK_COLORS, inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
+from src.ui_theme import (
+    RISK_COLORS,
+    inject_global_css,
+    render_data_mode_indicator,
+    render_demo_scope_controls,
+    render_disclaimer,
+    render_kpi_strip,
+    render_page_header,
+    render_risk_badge,
+)
 
 ROAD_GRAPH_FILES = {
     "Puri": Path("data/cache/roads/Puri_Odisha_India.graphml"),
@@ -131,11 +140,12 @@ if ranked_shelters:
     chosen = st.selectbox("Route to safe shelter", labels)
     selected_shelter_name = ranked_shelters[labels.index(chosen)]["shelter_name"]
 
-summary = st.columns(4)
-summary[0].metric("Risk", f"{selected['risk_score']:.1f}/100")
-summary[1].metric("Population", f"{int(selected['population']):,}")
-summary[2].metric("Priority", selected["relocation_priority"])
-summary[3].metric("Safe candidates", len(ranked_shelters))
+render_kpi_strip([
+    ("Risk", f"{selected['risk_score']:.1f}/100", str(selected["risk_level"])),
+    ("Population", f"{int(selected['population']):,}", "Selected habitation"),
+    ("Priority", selected["relocation_priority"], "Relocation decision support"),
+    ("Safe candidates", len(ranked_shelters), "Passed safety + capacity gates"),
+])
 
 if operational and hazard_data is None and hazard_profile == "stored":
     st.info("No calibrated GeoJSON is active; this view is using the stored hazard_score supplied with the operational habitation dataset.")
