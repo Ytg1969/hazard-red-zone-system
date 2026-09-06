@@ -17,14 +17,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4.0.1
         with:
           environment-file: environment.yml
           activate-environment: hazard-red-zone
-          auto-activate-base: false
+          auto-activate: false
+          conda-remove-defaults: true
           miniforge-version: latest
           use-mamba: true
 
