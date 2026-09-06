@@ -6,9 +6,31 @@ Use this page on the presentation laptop. The goal is to prove the **tested offl
 
 While internet is available, use GitHub **Actions → Build Offline Field Bundle → Run workflow**. Keep `road_scope=puri` unless you specifically want road graphs for all three demo cities.
 
-Download the successful `hazard-command-windows-offline-<run>` artifact and copy the extracted folder to both presentation laptops. It contains the application, Windows Python 3.12 dependency wheelhouse, generated road GraphML and a build-time strict-preflight report.
+Download the successful `hazard-command-windows-offline-<run>` artifact and copy the extracted folder to both presentation laptops. It contains the application, Windows Python 3.12 dependency wheelhouse, generated road GraphML, build-time strict-preflight report, and the two Windows helper scripts.
 
-See `docs/build_field_bundle.md` for the complete bundle instructions.
+Python 3.12 itself must already be installed on each laptop.
+
+### First time on each laptop
+
+Right-click:
+
+```text
+INSTALL_OFFLINE.ps1
+```
+
+and choose **Run with PowerShell**. It creates an isolated `.venv`, installs only from the bundled wheelhouse, validates a real cached Puri road route, and writes `INSTALL_OK.txt` only after strict field preflight passes.
+
+### Every rehearsal / demo
+
+Double-click:
+
+```text
+START_OFFLINE.cmd
+```
+
+It reruns strict preflight and launches Streamlit in explicit OFFLINE/LAN mode only if the laptop is still field-ready.
+
+See `docs/build_field_bundle.md` for the complete bundle instructions and manual fallback commands.
 
 If you are preparing directly from a Git checkout instead, run:
 
@@ -32,7 +54,7 @@ If the road cache cannot be prepared, the core app can still pass the normal pre
 
 ## Final offline rehearsal
 
-Disconnect internet before the rehearsal.
+Disconnect internet, then use `START_OFFLINE.cmd` from the generated bundle. If working from a Git checkout instead:
 
 ```bash
 python scripts/field_preflight.py --strict-road-cache
@@ -44,7 +66,7 @@ Open the printed laptop URL. Put the phone on the same Wi-Fi/hotspot and open th
 Verify in this order:
 
 1. **Overview** — show the incident-level KPIs and DEMO/source state.
-2. **Red Zone Map** — select Puri, inspect a HIGH/CRITICAL habitation and show the local road route if cached.
+2. **Red Zone Map** — select Puri, inspect a HIGH/CRITICAL habitation and show the validated local road route.
 3. **Risk Analysis** — show H/E/V/A contribution transparency and completeness.
 4. **Relocation Planner** — show safe-site filtering, available capacity, recommendation and population split.
 5. **Action plan** — download the PDF.
@@ -74,10 +96,10 @@ Do not describe:
 ## If something fails on stage
 
 - **Internet/live source fails:** continue offline; the core risk/relocation workflow is independent.
-- **Road GraphML fails:** point out the labelled straight-line fallback; do not claim road-network routing.
+- **Road GraphML fails:** strict launch will stop. Either restore the tested bundle or deliberately switch to the documented non-strict straight-line fallback; do not claim road-network routing.
 - **Phone cannot connect:** keep the laptop demo running and switch to the backup hotspot/network.
 - **Operational upload fails validation:** return to the bundled DEMO workflow; do not fill missing fields manually during the demo.
-- **Primary laptop fails:** use the backup laptop on the same tested commit and repeat the preflight.
+- **Primary laptop fails:** use the backup laptop with the same downloaded bundle and repeat strict preflight.
 
 ## Files to copy to both laptops
 
