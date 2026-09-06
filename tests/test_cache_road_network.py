@@ -18,6 +18,7 @@ def test_configure_osmnx_bounds_timeout(monkeypatch):
 def test_retry_succeeds_after_transient_failure(monkeypatch):
     calls = []
     sleeps = []
+    prepared = []
 
     def operation():
         calls.append(len(calls) + 1)
@@ -32,10 +33,12 @@ def test_retry_succeeds_after_transient_failure(monkeypatch):
         label="Puri, Odisha, India",
         attempts=2,
         retry_delay=3,
+        before_attempt=lambda attempt: prepared.append(attempt),
     )
 
     assert result == "ok"
     assert calls == [1, 2]
+    assert prepared == [1, 2]
     assert sleeps == [3.0]
 
 
@@ -51,13 +54,23 @@ def test_retry_fails_closed_after_attempt_budget(monkeypatch):
         )
 
 
+def test_overpass_selector_rotates_documented_global_instances(monkeypatch):
+    monkeypatch.setattr(cache_road_network.ox.settings, "overpass_url", "https://example.invalid/api")
+
+    seen = [cache_road_network._overpass_selector(attempt) for attempt in (1, 2, 3, 4)]
+
+    assert seen[:3] == list(cache_road_network.OVERPASS_URLS)
+    assert seen[3] == cache_road_network.OVERPASS_URLS[0]
+    assert cache_road_network.ox.settings.overpass_url == cache_road_network.OVERPASS_URLS[0]
+
+
 def test_cache_network_retries_and_writes_only_verified_graph(monkeypatch, tmp_path: Path):
     attempts = []
     saved = []
     graph = object()
 
     def graph_from_place(place, *, network_type, simplify):
-        attempts.append(place)
+        attempts.append((place, cache_road_network.ox.settings.overpass_url))
         if len(attempts) == 1:
             raise RuntimeError("transient")
         return graph
@@ -78,7 +91,8 @@ def test_cache_network_retries_and_writes_only_verified_graph(monkeypatch, tmp_p
         retry_delay=0,
     )
 
-    assert attempts == ["Puri, Odisha, India", "Puri, Odisha, India"]
+    assert [item[0] for item in attempts] == ["Puri, Odisha, India", "Puri, Odisha, India"]
+    assert [item[1] for item in attempts] == list(cache_road_network.OVERPASS_URLS[:2])
     assert path == tmp_path / "Puri_Odisha_India.graphml"
     assert saved == [(graph, path)]
     assert cache_road_network.ox.settings.requests_timeout == 45
