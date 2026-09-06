@@ -20,7 +20,7 @@ def test_field_bundle_workflow_contains_offline_contract():
         "Copy-Item scripts\\windows\\START_OFFLINE.cmd",
         "Prove bundle installer works offline",
         "INSTALL_OK.txt",
-        "actions/upload-artifact@v4",
+        "actions/upload-artifact@v7",
         "hazard-command-windows-offline-",
     ]
     for fragment in required_fragments:
