@@ -39,6 +39,13 @@ CORE_NAV = [
     ("Operational Data", "pages/9_Operational_Data.py", "▦"),
 ]
 
+MOBILE_NAV = [
+    ("Overview", "app.py", "⌂"),
+    ("Red Zones", "pages/2_Red_Zone_Map.py", "◉"),
+    ("Relocate", "pages/4_Relocation_Planner.py", "⇢"),
+    ("Live", "pages/7_Live_Data_Context.py", "◌"),
+]
+
 TECH_NAV = [
     ("System Readiness", "pages/8_System_Readiness.py"),
     ("GIS Source Inspector", "pages/10_GIS_Source_Inspector.py"),
@@ -75,6 +82,15 @@ def _render_navigation() -> None:
             for label, path in TECH_NAV:
                 st.page_link(path, label=label, use_container_width=True)
         st.caption("Decision support · Source-aware · Capacity constrained")
+
+
+def _render_mobile_navigation() -> None:
+    """Render four high-frequency field actions; CSS exposes them only on phones."""
+    with st.container(key="hz_mobile_nav"):
+        columns = st.columns(len(MOBILE_NAV), gap="small")
+        for column, (label, path, icon) in zip(columns, MOBILE_NAV):
+            with column:
+                st.page_link(path, label=f"{icon} {label}", use_container_width=True)
 
 
 def inject_global_css() -> None:
@@ -151,6 +167,9 @@ def inject_global_css() -> None:
         [data-testid="stSidebar"] [data-testid="stExpander"] { border:none; background:transparent; }
         [data-testid="stSidebar"] [data-testid="stExpander"] summary { color:#8294A8; font-size:.77rem; }
 
+        /* mobile action bar is hidden on desktop/tablet */
+        .st-key-hz_mobile_nav { display:none; }
+
         /* primary content */
         .hz-hero {
           position:relative;
@@ -224,7 +243,7 @@ def inject_global_css() -> None:
 
         /* phone */
         @media (max-width:720px) {
-          .block-container { padding:.62rem .62rem 4.5rem; }
+          .block-container { padding:.62rem .62rem 6.15rem; }
           [data-testid="stHorizontalBlock"] { flex-direction:column!important; gap:.65rem!important; }
           [data-testid="stHorizontalBlock"] > [data-testid="column"] { width:100%!important; flex:1 1 100%!important; min-width:0!important; }
           .hz-hero { margin-bottom:.72rem; border-radius:14px; padding:.92rem .9rem; box-shadow:0 10px 34px rgba(0,0,0,.22); }
@@ -249,12 +268,67 @@ def inject_global_css() -> None:
           [data-testid="stFileUploaderDropzone"] { padding:.8rem!important; }
           [data-testid="stAlert"] { font-size:.86rem; }
           .hz-disclaimer { font-size:.68rem; margin-top:1.35rem; }
+
+          .st-key-hz_mobile_nav {
+            display:block!important;
+            position:fixed;
+            left:max(.45rem,env(safe-area-inset-left));
+            right:max(.45rem,env(safe-area-inset-right));
+            bottom:max(.38rem,env(safe-area-inset-bottom));
+            z-index:999990;
+            padding:.28rem;
+            border:1px solid rgba(163,181,203,.20);
+            border-radius:16px;
+            background:rgba(9,15,24,.94);
+            backdrop-filter:blur(18px);
+            -webkit-backdrop-filter:blur(18px);
+            box-shadow:0 16px 48px rgba(0,0,0,.46);
+          }
+          .st-key-hz_mobile_nav [data-testid="stHorizontalBlock"] {
+            flex-direction:row!important;
+            gap:.18rem!important;
+            align-items:stretch!important;
+          }
+          .st-key-hz_mobile_nav [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            width:25%!important;
+            flex:1 1 25%!important;
+            min-width:0!important;
+          }
+          .st-key-hz_mobile_nav [data-testid="stPageLink"] a {
+            min-height:56px!important;
+            height:100%;
+            justify-content:center!important;
+            text-align:center;
+            padding:.34rem .12rem!important;
+            border-radius:12px!important;
+            border:1px solid transparent;
+            color:#C9D5E1!important;
+            background:transparent;
+            font-size:.66rem!important;
+            font-weight:760!important;
+            line-height:1.18!important;
+            white-space:normal!important;
+          }
+          .st-key-hz_mobile_nav [data-testid="stPageLink"] a:hover,
+          .st-key-hz_mobile_nav [data-testid="stPageLink"] a:focus-visible {
+            color:#F5F9FD!important;
+            background:rgba(94,167,255,.11)!important;
+            border-color:rgba(94,167,255,.24)!important;
+            transform:none!important;
+          }
+          .st-key-hz_mobile_nav [data-testid="stPageLink"] p {
+            margin:0!important;
+            font-size:inherit!important;
+            line-height:inherit!important;
+          }
         }
 
         @media (max-width:480px) {
           .hz-hero-meta .hz-chip:nth-child(n+3) { display:none; }
           [data-testid="stSidebar"] { width:88vw!important; min-width:88vw!important; }
           .hz-brand { padding-bottom:.65rem; }
+          .st-key-hz_mobile_nav { left:.32rem; right:.32rem; bottom:max(.28rem,env(safe-area-inset-bottom)); border-radius:14px; }
+          .st-key-hz_mobile_nav [data-testid="stPageLink"] a { font-size:.62rem!important; min-height:54px!important; }
         }
 
         @media (pointer:coarse) {
@@ -267,6 +341,7 @@ def inject_global_css() -> None:
         unsafe_allow_html=True,
     )
     _render_navigation()
+    _render_mobile_navigation()
 
 
 def render_page_header(title: str, description: str) -> None:
