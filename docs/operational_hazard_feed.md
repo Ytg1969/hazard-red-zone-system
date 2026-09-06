@@ -26,6 +26,12 @@ Recommended provenance properties:
 - `mapping_version`
 - `updated_at`
 
+## Odisha/Puri flood-hazard evidence
+
+The authoritative NRSC/ISRO + OSDMA Odisha Flood Hazard Atlas evidence is tracked in `docs/odisha_flood_hazard_calibration_evidence.md`.
+
+That record verifies the 2001–2018 source classes and Puri district statistics, but it deliberately does **not** authorize analytical activation. The exact machine-readable Odisha atlas layer/product identifier and the reviewed source-class → 0–100 mapping remain unresolved hard gates. Do not infer a WMS layer name from other states or set `SIH_HAZARD_CALIBRATION_CONFIRMED=true` merely because the generic Bhuvan Flood Hazard WMS is reachable.
+
 ## Safety boundary
 
 Configured live weather, alert and event feeds remain contextual unless separately calibrated. This feed only supplies H when its numeric mapping has been explicitly approved; the frozen risk formula remains unchanged:
