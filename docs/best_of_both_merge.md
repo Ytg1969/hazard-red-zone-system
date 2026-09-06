@@ -33,7 +33,7 @@ The second repository contains useful presentation and routing ideas, but it als
 ## Demo road-cache command
 
 ```powershell
-py -3.13 scripts/cache_road_network.py --demo-cities
+py -3.12 scripts/cache_road_network.py --demo-cities
 ```
 
 Large GraphML files should remain local cache artifacts. The application continues to work without them using an explicitly labelled straight-line fallback.
