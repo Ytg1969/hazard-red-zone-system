@@ -74,4 +74,4 @@ def test_windows_bundle_launcher_refuses_unvalidated_environment():
 def test_pip_runtime_includes_osmnx_for_cached_graph_routing():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     normalized = {line.strip().lower() for line in requirements if line.strip() and not line.startswith("#")}
-    assert "osmnx" in normalized
+    assert any(line == "osmnx" or line.startswith("osmnx==") for line in normalized)
