@@ -33,6 +33,12 @@ STRICT_MODE_PAGES = [
     "pages/9_Operational_Data.py",
     "pages/12_Schema_Mapper.py",
 ]
+OFFLINE_CORE_PAGES = [
+    "pages/0_Operations_Hub.py",
+    "pages/2_Red_Zone_Map.py",
+    "pages/4_Relocation_Planner.py",
+    "pages/7_Live_Data_Context.py",
+]
 
 
 def _main_app() -> AppTest:
@@ -73,3 +79,27 @@ def test_streamlit_pages_survive_strict_mode_without_feeds(page: str, monkeypatc
     app = _main_app()
     app.switch_page(page).run()
     assert not app.exception, f"Strict-mode page raised exception: {page}: {app.exception}"
+
+
+def test_streamlit_main_offline_mode(monkeypatch):
+    """The landing page must remain usable with all external access disabled."""
+    monkeypatch.setenv("SIH_OFFLINE_MODE", "true")
+    monkeypatch.delenv("SIH_HABITATION_CSV_URL", raising=False)
+    monkeypatch.delenv("SIH_SHELTER_CSV_URL", raising=False)
+    monkeypatch.delenv("SIH_HAZARD_GEOJSON_URL", raising=False)
+    app = _main_app()
+    assert not app.exception
+
+
+@pytest.mark.parametrize("page", OFFLINE_CORE_PAGES, ids=lambda page: f"offline-{Path(page).name}")
+def test_streamlit_core_pages_survive_offline_mode(page: str, monkeypatch):
+    """Core field pages must render without remote feeds, routing or map-tile access."""
+    monkeypatch.setenv("SIH_OFFLINE_MODE", "true")
+    monkeypatch.setenv("SIH_REQUIRE_OPERATIONAL_DATA", "false")
+    monkeypatch.delenv("SIH_HABITATION_CSV_URL", raising=False)
+    monkeypatch.delenv("SIH_SHELTER_CSV_URL", raising=False)
+    monkeypatch.delenv("SIH_HAZARD_GEOJSON_URL", raising=False)
+    monkeypatch.delenv("SIH_SACHET_FEED_URL", raising=False)
+    app = _main_app()
+    app.switch_page(page).run()
+    assert not app.exception, f"Offline-mode page raised exception: {page}: {app.exception}"

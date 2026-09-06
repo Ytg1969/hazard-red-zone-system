@@ -10,6 +10,7 @@ from src.operational_hazards import geojson_to_gdf
 from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards
 from src.relocation import rank_shelters
 from src.routing import estimate_route
+from src.runtime_mode import offline_mode
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import RISK_COLORS, inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
 
@@ -25,10 +26,11 @@ def _red_zone_radius_m(risk_score: float) -> float:
     return 650.0 + (score - 50.0) * 24.0
 
 
-st.set_page_config(page_title="Red Zone Map", layout="wide")
+st.set_page_config(page_title="Red Zone Map", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
-render_page_header("Red Zone Map", "Operational map for red-zone inspection, calibrated GIS exposure and capacity-safe shelter routing.")
+render_page_header("Red Zone Map", "Inspect red zones, compare safe shelter options and verify route provenance in one decision-focused map.")
 
+is_offline = offline_mode()
 resolved = None
 try:
     resolved = resolve_operational_workspace(auto_configured=True)
@@ -79,23 +81,31 @@ except Exception as exc:
     st.stop()
 
 with st.sidebar:
-    st.subheader("Map filters")
-    risk_levels = st.multiselect("Risk levels", ["CRITICAL", "HIGH", "MODERATE", "LOW"], default=["CRITICAL", "HIGH", "MODERATE", "LOW"])
-    show_population = st.checkbox("Scale markers by population", value=True)
-    show_red_zones = st.checkbox("Show HIGH / CRITICAL decision zones", value=True)
-    show_shelters = st.checkbox("Show safe shelter candidates", value=True)
-    show_route = st.checkbox("Show selected shelter route", value=True)
-    allow_live_route = st.checkbox("Use live road routing when cache is missing", value=True)
+    with st.expander("Map layers & filters", expanded=False):
+        risk_levels = st.multiselect("Risk levels", ["CRITICAL", "HIGH", "MODERATE", "LOW"], default=["CRITICAL", "HIGH", "MODERATE", "LOW"])
+        show_population = st.checkbox("Scale markers by population", value=True)
+        show_red_zones = st.checkbox("Show HIGH / CRITICAL decision zones", value=True)
+        show_shelters = st.checkbox("Show safe shelter candidates", value=True)
+        show_route = st.checkbox("Show selected shelter route", value=True)
+        allow_live_route = st.checkbox(
+            "Use live road routing when cache is missing",
+            value=not is_offline,
+            disabled=is_offline,
+        )
+        if is_offline:
+            st.caption("Offline field mode disables live OSRM. A local GraphML road network is still preferred when available.")
 
-    if not operational:
-        bhuvan_options = layers_for_city(city)
-        if bhuvan_options:
-            st.subheader("Authoritative GIS context")
-            if st.checkbox("Show Bhuvan WMS overlay", value=False):
-                labels = [item["label"] for item in bhuvan_options]
-                chosen = st.selectbox("Bhuvan layer", labels)
-                selected_bhuvan = next(item for item in bhuvan_options if item["label"] == chosen)
-                st.caption("Context only; this WMS is not a calibrated numerical input.")
+        if not operational:
+            bhuvan_options = layers_for_city(city)
+            if bhuvan_options:
+                st.markdown("**Authoritative GIS context**")
+                if is_offline:
+                    st.caption("Bhuvan WMS overlays are disabled offline to avoid network requests.")
+                elif st.checkbox("Show Bhuvan WMS overlay", value=False):
+                    labels = [item["label"] for item in bhuvan_options]
+                    chosen = st.selectbox("Bhuvan layer", labels)
+                    selected_bhuvan = next(item for item in bhuvan_options if item["label"] == chosen)
+                    st.caption("Context only; this WMS is not a calibrated numerical input.")
 
 filtered = habitations[habitations["risk_level"].isin(risk_levels)].copy()
 if filtered.empty:
@@ -134,9 +144,13 @@ elif operational and hazard_data is not None:
     source_mode = hazard_source.get("mode", "SESSION") if hazard_source else "SESSION"
     st.success(f"Calibrated operational hazard layer active: {source_label} · {source_mode}")
 
+if is_offline:
+    st.info("Offline map mode: internet basemap tiles and remote GIS overlays are disabled. Red-zone vectors, shelter markers and local/fallback route geometry remain available.")
+
 map_center = [float(filtered["latitude"].mean()), float(filtered["longitude"].mean())]
 map_obj = folium.Map(location=map_center, zoom_start=10 if len(filtered) < 80 else 8, tiles=None, control_scale=True)
-folium.TileLayer(tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr="© OpenStreetMap contributors", name="OpenStreetMap", overlay=False, control=False, max_zoom=19).add_to(map_obj)
+if not is_offline:
+    folium.TileLayer(tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr="© OpenStreetMap contributors", name="OpenStreetMap", overlay=False, control=False, max_zoom=19).add_to(map_obj)
 
 if selected_bhuvan:
     folium.WmsTileLayer(url=selected_bhuvan["service_url"], layers=selected_bhuvan["layer"], name=f"Bhuvan — {selected_bhuvan['label']}", fmt="image/png", transparent=True, overlay=True, control=True, show=True, version="1.1.1", attr="NRSC/ISRO Bhuvan").add_to(map_obj)
@@ -200,9 +214,11 @@ with right:
     st.write(f"**Drivers:** {selected['risk_drivers']}")
     st.markdown("### Safe shelter candidates")
     if ranked_shelters:
-        for i, shelter in enumerate(ranked_shelters[:8]):
+        for i, shelter in enumerate(ranked_shelters[:5]):
             marker = "→" if shelter["shelter_name"] == selected_shelter_name else "•"
             st.write(f"{marker} **#{i+1} {shelter['shelter_name']}** · capacity {int(shelter['available_capacity']):,} · suitability {shelter['suitability_score']:.1f}")
+        if len(ranked_shelters) > 5:
+            st.caption(f"{len(ranked_shelters) - 5} additional qualified candidate(s) available in the Relocation Planner.")
     else:
         st.warning("No shelter passes safety and capacity gates.")
     if route and recommended:
@@ -211,5 +227,8 @@ with right:
         st.write(f"**{route['distance_km']:.2f} km** · `{route.get('routing_mode')}`")
         if route.get("travel_time_min") is not None:
             st.write(f"Estimated travel time: **{route['travel_time_min']:.1f} min**")
+        route_note = str(route.get("route_note") or "").strip()
+        if route_note:
+            st.caption(route_note)
 
 render_disclaimer()
