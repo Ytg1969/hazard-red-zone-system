@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="Hazard Command",
     page_icon="HZ",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 inject_global_css()
 render_page_header(
