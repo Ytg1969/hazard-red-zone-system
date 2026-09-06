@@ -2,7 +2,15 @@
 
 Use this page on the presentation laptop. The goal is to prove the **tested offline operator workflow** before the jury/demo begins.
 
-## Before leaving for the event — internet available
+## Preferred preparation — build the offline artifact
+
+While internet is available, use GitHub **Actions → Build Offline Field Bundle → Run workflow**. Keep `road_scope=puri` unless you specifically want road graphs for all three demo cities.
+
+Download the successful `hazard-command-windows-offline-<run>` artifact and copy the extracted folder to both presentation laptops. It contains the application, Windows Python 3.12 dependency wheelhouse, generated road GraphML and a build-time strict-preflight report.
+
+See `docs/build_field_bundle.md` for the complete bundle instructions.
+
+If you are preparing directly from a Git checkout instead, run:
 
 ```bash
 git checkout main
@@ -73,9 +81,14 @@ Do not describe:
 
 ## Files to copy to both laptops
 
+Preferred: copy the complete downloaded field-bundle artifact to both laptops.
+
+If assembling manually, copy:
+
 - final repository at the tested commit
-- Python environment / installed dependencies
+- installed Python 3.12 environment or the generated Windows wheelhouse
 - `data/cache/roads/Puri_Odisha_India.graphml` if road-aware offline routing will be shown
 - any validated local operational datasets intended for the demo
+- build-time `field_preflight.json` when available
 - backup screen recording
 - this field guide and `docs/pre_demo_checklist.md`
