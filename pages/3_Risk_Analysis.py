@@ -7,7 +7,7 @@ from src.operational_hazards import geojson_to_gdf
 from src.pipeline import enrich_habitations, load_demo_data, load_demo_hazards
 from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
-from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
+from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_kpi_strip, render_page_header, render_risk_badge
 
 st.set_page_config(page_title="Risk Analysis", layout="wide")
 inject_global_css()
@@ -65,11 +65,13 @@ left, right = st.columns([1.15, 1.85], gap="large")
 with left:
     st.subheader(habitation["name"])
     render_risk_badge(risk["risk_level"])
-    st.metric("Risk Score", f"{risk['risk_score']:.1f}/100")
-    st.metric("Hazard Score", f"{risk['components']['hazard']:.1f}/100")
-    st.metric("Population", f"{int(habitation['population']):,}")
-    st.metric("Vulnerable Population", f"{int(habitation['children_population'] + habitation['elderly_population']):,}")
-    st.metric("Relocation Priority", habitation["relocation_priority"])
+    render_kpi_strip([
+        ("Risk Score", f"{risk['risk_score']:.1f}/100", risk["risk_level"]),
+        ("Hazard Score", f"{risk['components']['hazard']:.1f}/100", "H component"),
+        ("Population", f"{int(habitation['population']):,}", "Total habitation population"),
+        ("Vulnerable Population", f"{int(habitation['children_population'] + habitation['elderly_population']):,}", "Children + elderly proxy"),
+        ("Relocation Priority", habitation["relocation_priority"], "Decision-support priority"),
+    ])
     if habitation.get("inside_hazard_zone") is not None:
         st.caption(f"GIS intersection: {habitation.get('inside_hazard_zone')} · nearest hazard distance: {habitation.get('distance_to_hazard_km')} km")
 with right:
