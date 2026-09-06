@@ -8,7 +8,13 @@ from src.live_operations import fetch_operations_snapshot
 from src.location_context import search_locations
 from src.runtime_mode import offline_mode
 from src.streamlit_workspace import resolve_operational_workspace
-from src.ui_theme import inject_global_css, render_data_mode_indicator, render_disclaimer, render_page_header
+from src.ui_theme import (
+    inject_global_css,
+    render_data_mode_indicator,
+    render_disclaimer,
+    render_kpi_strip,
+    render_page_header,
+)
 
 st.set_page_config(page_title="Live Context", page_icon="LIVE", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
@@ -140,28 +146,30 @@ events = pd.DataFrame(snapshot.get("events", []))
 health_df = pd.DataFrame(snapshot.get("source_health", []))
 
 st.markdown("## Current picture")
-metrics = st.columns(6, gap="small")
 temp = weather_current.get("temperature_2m")
 precip = weather_current.get("precipitation")
 wind = weather_current.get("wind_speed_10m")
 aqi = air_current.get("us_aqi")
 pm25 = air_current.get("pm2_5")
-metrics[0].metric("Temperature", f"{temp} {weather_units.get('temperature_2m', '')}" if temp is not None else "—")
-metrics[1].metric("Precipitation", f"{precip} {weather_units.get('precipitation', '')}" if precip is not None else "—")
-metrics[2].metric("Wind", f"{wind} {weather_units.get('wind_speed_10m', '')}" if wind is not None else "—")
-metrics[3].metric("US AQI", aqi if aqi is not None else "—")
-metrics[4].metric("PM2.5", f"{pm25} {air_units.get('pm2_5', '')}" if pm25 is not None else "—")
-metrics[5].metric("Nearby Events", len(events))
+render_kpi_strip([
+    ("Temperature", f"{temp} {weather_units.get('temperature_2m', '')}" if temp is not None else "—", "Current source value"),
+    ("Precipitation", f"{precip} {weather_units.get('precipitation', '')}" if precip is not None else "—", "Current source value"),
+    ("Wind", f"{wind} {weather_units.get('wind_speed_10m', '')}" if wind is not None else "—", "10 m wind speed"),
+    ("US AQI", aqi if aqi is not None else "—", "Air-quality context"),
+    ("PM2.5", f"{pm25} {air_units.get('pm2_5', '')}" if pm25 is not None else "—", "Air-quality context"),
+    ("Nearby Events", len(events), "Matching query window"),
+])
 
 if not health_df.empty:
     mode_values = health_df.get("mode", pd.Series(dtype=str)).astype(str).str.upper()
     live_count = int(mode_values.isin(["LIVE", "CACHED"]).sum())
     offline_count = int(health_df.get("access_status", pd.Series(dtype=str)).astype(str).str.upper().eq("OFFLINE").sum())
     error_count = int(health_df.get("error", pd.Series(dtype=str)).fillna("").astype(str).str.strip().ne("").sum())
-    status_cols = st.columns(3)
-    status_cols[0].metric("Current / cached sources", live_count)
-    status_cols[1].metric("Offline-disabled sources", offline_count)
-    status_cols[2].metric("Sources needing attention", error_count)
+    render_kpi_strip([
+        ("Current / cached", live_count, "Sources with usable context"),
+        ("Offline-disabled", offline_count, "External sources intentionally disabled"),
+        ("Needs attention", error_count, "Sources reporting an error"),
+    ])
 
 lat = float(snapshot["latitude"])
 lon = float(snapshot["longitude"])
