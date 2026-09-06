@@ -1,11 +1,18 @@
 # Pre-Demo Checklist
 
-## Code and environment
+## Release and laptop gate
 - [ ] `git checkout main && git pull origin main`
-- [ ] `py -3.13 -m pip install -r requirements.txt`
-- [ ] `py -3.13 scripts/demo_gate.py` reports `demo_ready: true`
-- [ ] `py -3.13 -m pytest tests -q` passes
-- [ ] `py -3.13 -m streamlit run app.py` launches without traceback
+- [ ] `python -m pip install -r requirements.txt`
+- [ ] `python scripts/field_preflight.py` reports `Core offline workflow: PASS`
+- [ ] Record the tested Git commit printed by the preflight
+- [ ] Working tree is clean, or every intentional local file is documented
+- [ ] TCP port 8501 is available (or `SIH_OFFLINE_PORT` is set to an available port)
+
+## Road-aware offline routing
+- [ ] While internet is available, run `python scripts/cache_road_network.py "Puri, Odisha, India"`
+- [ ] Confirm `data/cache/roads/Puri_Odisha_India.graphml` exists on the presentation laptop
+- [ ] Run `python scripts/field_preflight.py --strict-road-cache` and confirm PASS
+- [ ] If road cache is intentionally absent, rehearse the visibly labelled straight-line fallback instead of claiming road-aware routing
 
 ## Multi-hazard walkthrough
 - [ ] Combined Multi-Hazard loads
@@ -32,18 +39,34 @@
 - [ ] Batch allocation does not double-book capacity
 - [ ] Multi-city batch allocation never crosses demo-city boundaries
 - [ ] PDF and Markdown action plans download
+- [ ] Route provenance is visible as local GraphML, cached route or labelled fallback
 
-## External context
+## Offline phone rehearsal
+- [ ] Disconnect the laptop from the internet
+- [ ] Run `python scripts/field_preflight.py --strict-road-cache`
+- [ ] Run `python scripts/run_offline.py`
+- [ ] Laptop opens the printed `127.0.0.1` URL
+- [ ] Phone joins the same Wi-Fi/hotspot and opens the printed LAN URL
+- [ ] Overview works on phone
+- [ ] Red Zone Map works without internet basemap tiles
+- [ ] Risk Analysis works on phone
+- [ ] Relocation Planner works on phone
+- [ ] Live Context shows explicit OFFLINE source state
+- [ ] Operational Data still permits local file recovery/uploads
+
+## External context when internet is available
 - [ ] SACHET panel gracefully uses LIVE/CACHED/DEMO behavior
 - [ ] No unverified endpoint is labelled LIVE
-- [ ] Optional USGS earthquake context failure does not break the core app
+- [ ] Optional external-source failure does not break the core app
+- [ ] Live Context is presented as corroborating evidence, not as an automatic risk-score input
 
 ## Operational resilience
-- [ ] Disconnect internet and repeat the core demo
-- [ ] Cached road graph is configured if road-aware routing is being shown
-- [ ] Haversine fallback is visibly labelled when road cache is absent
-- [ ] Primary and backup laptops both run the final tested commit
+- [ ] Primary and backup laptops both run the same final tested commit
+- [ ] Puri road GraphML exists on both laptops if road-aware offline routing will be shown
+- [ ] Local operational files needed for the demonstration exist on both laptops
+- [ ] Backup hotspot plan has been tested
 - [ ] Backup screen recording exists
+- [ ] Chargers/power bank and required display adapters are packed
 
 ## Jury-safe claims
 - [ ] Do not call prototype multi-hazard weights official standards
@@ -52,3 +75,4 @@
 - [ ] Do not call Puri/Guwahati/Chennai a definitive national top-3 ranking
 - [ ] State that KMeans zones are coordination aids, not evacuation orders
 - [ ] State that global optimization only compares safe/capacity-valid candidates
+- [ ] State that offline mode disables current external observations rather than fabricating them

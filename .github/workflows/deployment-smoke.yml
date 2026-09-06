@@ -30,6 +30,9 @@ jobs:
       - name: Compile production sources
         run: python -m compileall -q app.py pages src scripts tests
 
+      - name: Run field environment preflight
+        run: python scripts/field_preflight.py --skip-gates --json
+
       - name: Smoke every Streamlit page with production dependencies
         run: python -m pytest tests/test_streamlit_smoke.py -q
 
