@@ -64,6 +64,18 @@ jobs:
           Copy-Item scripts\windows\INSTALL_OFFLINE.ps1 field-bundle\INSTALL_OFFLINE.ps1
           Copy-Item scripts\windows\START_OFFLINE.cmd field-bundle\START_OFFLINE.cmd
 
+          $buildUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          @"
+          HAZARD COMMAND — OFFLINE FIELD BUNDLE BUILD RECORD
+          repository=${{ github.repository }}
+          commit_sha=${{ github.sha }}
+          workflow=${{ github.workflow }}
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          road_scope=${{ inputs.road_scope }}
+          built_at_utc=$buildUtc
+          "@ | Set-Content -Encoding UTF8 field-bundle\BUILD_INFO.txt
+
           @"
           HAZARD COMMAND — WINDOWS OFFLINE FIELD BUNDLE
 
@@ -87,6 +99,7 @@ jobs:
 
           Manual fallback commands are documented in docs\build_field_bundle.md.
           Keep field_preflight.json with the bundle as the build-time readiness record.
+          Keep BUILD_INFO.txt with the bundle so the exact GitHub commit/run and road scope remain traceable.
           "@ | Set-Content -Encoding UTF8 field-bundle\README_FIRST.txt
 
       - name: Prove bundle installer works offline
