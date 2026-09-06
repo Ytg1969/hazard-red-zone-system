@@ -38,6 +38,7 @@ OFFLINE_CORE_PAGES = [
     "pages/2_Red_Zone_Map.py",
     "pages/4_Relocation_Planner.py",
     "pages/7_Live_Data_Context.py",
+    "pages/9_Operational_Data.py",
 ]
 
 
@@ -93,7 +94,7 @@ def test_streamlit_main_offline_mode(monkeypatch):
 
 @pytest.mark.parametrize("page", OFFLINE_CORE_PAGES, ids=lambda page: f"offline-{Path(page).name}")
 def test_streamlit_core_pages_survive_offline_mode(page: str, monkeypatch):
-    """Core field pages must render without remote feeds, routing or map-tile access."""
+    """Core field and data-recovery pages must render without remote feeds, routing or map-tile access."""
     monkeypatch.setenv("SIH_OFFLINE_MODE", "true")
     monkeypatch.setenv("SIH_REQUIRE_OPERATIONAL_DATA", "false")
     monkeypatch.delenv("SIH_HABITATION_CSV_URL", raising=False)
