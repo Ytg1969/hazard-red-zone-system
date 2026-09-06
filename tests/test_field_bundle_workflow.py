@@ -27,6 +27,23 @@ def test_field_bundle_workflow_contains_offline_contract():
         assert fragment in text, f"field bundle workflow is missing required contract: {fragment}"
 
 
+def test_field_bundle_records_exact_build_provenance():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    required_fragments = [
+        "field-bundle\\BUILD_INFO.txt",
+        "repository=${{ github.repository }}",
+        "commit_sha=${{ github.sha }}",
+        "workflow=${{ github.workflow }}",
+        "run_id=${{ github.run_id }}",
+        "run_number=${{ github.run_number }}",
+        "road_scope=${{ inputs.road_scope }}",
+        "built_at_utc=$buildUtc",
+        "Keep BUILD_INFO.txt with the bundle",
+    ]
+    for fragment in required_fragments:
+        assert fragment in text, f"field bundle workflow is missing build provenance: {fragment}"
+
+
 def test_windows_bundle_installer_creates_isolated_offline_environment():
     text = INSTALLER.read_text(encoding="utf-8")
     required_fragments = [
