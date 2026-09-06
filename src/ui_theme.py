@@ -2,6 +2,8 @@ import html
 
 import streamlit as st
 
+from src.runtime_mode import offline_mode
+
 
 RISK_COLORS = {
     "LOW": "#26C281",
@@ -56,10 +58,16 @@ def _render_navigation() -> None:
               <div class="hz-logo">HZ</div>
               <div><strong>Hazard Command</strong><span>SIH26191</span></div>
             </div>
-            <div class="hz-nav-label">OPERATIONS</div>
             """,
             unsafe_allow_html=True,
         )
+        if offline_mode():
+            st.markdown(
+                "<div class='hz-runtime hz-runtime-offline'><span></span>OFFLINE FIELD MODE</div>"
+                "<div class='hz-runtime-note'>External source calls are disabled. Local planning remains available.</div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown('<div class="hz-nav-label">OPERATIONS</div>', unsafe_allow_html=True)
         for label, path, icon in CORE_NAV:
             st.page_link(path, label=f"{icon}  {label}", use_container_width=True)
         st.markdown('<div class="hz-nav-separator"></div>', unsafe_allow_html=True)
@@ -87,6 +95,7 @@ def inject_global_css() -> None:
           --hz-shadow:0 18px 55px rgba(0,0,0,.28);
         }
         html { scroll-behavior:smooth; }
+        body { -webkit-text-size-adjust:100%; text-rendering:optimizeLegibility; }
         .stApp {
           background:
             radial-gradient(circle at 20% -10%, rgba(94,167,255,.13), transparent 34%),
@@ -129,12 +138,16 @@ def inject_global_css() -> None:
           border-color:rgba(94,167,255,.16);
           transform:translateX(2px);
         }
-        .hz-brand { display:flex; align-items:center; gap:.7rem; padding:.35rem .2rem 1rem; }
+        .hz-brand { display:flex; align-items:center; gap:.7rem; padding:.35rem .2rem .8rem; }
         .hz-logo { width:34px; height:34px; display:grid; place-items:center; border-radius:10px; font-size:.72rem; font-weight:900; color:#07101A; background:linear-gradient(135deg,#75B9FF,#45D6C4); box-shadow:0 8px 24px rgba(94,167,255,.25); }
         .hz-brand strong { display:block; color:#F3F7FB; font-size:.92rem; }
         .hz-brand span { display:block; color:#74879B; font-size:.64rem; letter-spacing:.1em; margin-top:.05rem; }
-        .hz-nav-label { color:#60758A; font-size:.61rem; font-weight:800; letter-spacing:.15em; margin:.2rem .25rem .45rem; }
+        .hz-nav-label { color:#60758A; font-size:.61rem; font-weight:800; letter-spacing:.15em; margin:.72rem .25rem .45rem; }
         .hz-nav-separator { height:1px; background:var(--hz-border); margin:.7rem 0; }
+        .hz-runtime { display:flex; align-items:center; gap:.42rem; border-radius:9px; padding:.5rem .62rem; font-size:.64rem; font-weight:850; letter-spacing:.08em; }
+        .hz-runtime span { width:.45rem; height:.45rem; border-radius:50%; background:#F7C948; box-shadow:0 0 0 4px rgba(247,201,72,.08); }
+        .hz-runtime-offline { color:#F7D66B; background:rgba(247,201,72,.07); border:1px solid rgba(247,201,72,.20); }
+        .hz-runtime-note { color:#718397; font-size:.66rem; line-height:1.42; padding:.38rem .15rem 0; }
         [data-testid="stSidebar"] [data-testid="stExpander"] { border:none; background:transparent; }
         [data-testid="stSidebar"] [data-testid="stExpander"] summary { color:#8294A8; font-size:.77rem; }
 
@@ -171,8 +184,9 @@ def inject_global_css() -> None:
           overflow:hidden;
           background:rgba(255,255,255,.012);
           box-shadow:0 12px 34px rgba(0,0,0,.10);
+          max-width:100%;
         }
-        iframe[title="streamlit_folium.st_folium"] { border:1px solid var(--hz-border)!important; border-radius:18px!important; box-shadow:0 16px 42px rgba(0,0,0,.16)!important; overflow:hidden; }
+        iframe[title="streamlit_folium.st_folium"] { border:1px solid var(--hz-border)!important; border-radius:18px!important; box-shadow:0 16px 42px rgba(0,0,0,.16)!important; overflow:hidden; max-width:100%!important; }
         [data-testid="stAlert"] { border-radius:13px; border-width:1px; }
         [data-testid="stExpander"] { border:1px solid var(--hz-border); border-radius:13px; background:rgba(255,255,255,.015); overflow:hidden; }
         .stTabs [data-baseweb="tab-list"] { gap:.3rem; border-bottom:1px solid var(--hz-border); }
@@ -199,10 +213,53 @@ def inject_global_css() -> None:
         .hz-disclaimer { color:#77899C; font-size:.72rem; border-top:1px solid var(--hz-border); margin-top:2rem; padding-top:.95rem; }
         hr { border-color:var(--hz-border)!important; }
 
+        /* tablet */
         @media (max-width:900px) {
-          .block-container { padding-left:.9rem; padding-right:.9rem; }
+          .block-container { padding-left:.85rem; padding-right:.85rem; padding-top:.85rem; }
+          [data-testid="stSidebar"] { width:min(84vw,330px)!important; min-width:min(84vw,330px)!important; }
           .hz-hero { border-radius:16px; padding:1.05rem; }
-          .hz-hero:after { opacity:.35; }
+          .hz-hero:after { opacity:.3; }
+          .hz-card { min-height:0; }
+        }
+
+        /* phone */
+        @media (max-width:720px) {
+          .block-container { padding:.62rem .62rem 4.5rem; }
+          [data-testid="stHorizontalBlock"] { flex-direction:column!important; gap:.65rem!important; }
+          [data-testid="stHorizontalBlock"] > [data-testid="column"] { width:100%!important; flex:1 1 100%!important; min-width:0!important; }
+          .hz-hero { margin-bottom:.72rem; border-radius:14px; padding:.92rem .9rem; box-shadow:0 10px 34px rgba(0,0,0,.22); }
+          .hz-hero h1 { font-size:1.55rem; line-height:1.13; }
+          .hz-hero p { font-size:.86rem; line-height:1.5; }
+          .hz-kicker { font-size:.58rem; margin-bottom:.38rem; }
+          .hz-hero-meta { margin-top:.68rem; gap:.3rem; }
+          .hz-chip { font-size:.58rem; padding:.22rem .46rem; }
+          h2 { font-size:1.14rem; margin-top:1.05rem; }
+          h3 { font-size:.96rem; }
+          p,li { line-height:1.52; }
+          [data-testid="stMetric"] { border-radius:13px; padding:.82rem .9rem; min-height:88px; }
+          [data-testid="stMetricValue"] { font-size:1.35rem; }
+          [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stVegaLiteChart"] { border-radius:13px; box-shadow:none; overflow-x:auto; }
+          iframe[title="streamlit_folium.st_folium"] { border-radius:13px!important; min-height:380px!important; height:56vh!important; box-shadow:none!important; }
+          .stTabs [data-baseweb="tab-list"] { overflow-x:auto; overflow-y:hidden; flex-wrap:nowrap; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+          .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display:none; }
+          .stTabs [data-baseweb="tab"] { flex:0 0 auto; white-space:nowrap; min-height:44px; }
+          .stButton > button, .stDownloadButton > button { min-height:46px; width:100%; font-size:.9rem; }
+          [data-testid="stPageLink"] a { min-height:46px!important; display:flex!important; align-items:center!important; }
+          [data-baseweb="select"] > div, [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input { min-height:46px; }
+          [data-testid="stFileUploaderDropzone"] { padding:.8rem!important; }
+          [data-testid="stAlert"] { font-size:.86rem; }
+          .hz-disclaimer { font-size:.68rem; margin-top:1.35rem; }
+        }
+
+        @media (max-width:480px) {
+          .hz-hero-meta .hz-chip:nth-child(n+3) { display:none; }
+          [data-testid="stSidebar"] { width:88vw!important; min-width:88vw!important; }
+          .hz-brand { padding-bottom:.65rem; }
+        }
+
+        @media (pointer:coarse) {
+          .stButton > button, .stDownloadButton > button, [data-testid="stPageLink"] a { min-height:48px!important; }
+          [data-baseweb="select"] > div { min-height:46px; }
         }
         @media (prefers-reduced-motion:reduce) { *,*:before,*:after { transition:none!important; animation:none!important; scroll-behavior:auto!important; } }
         </style>
