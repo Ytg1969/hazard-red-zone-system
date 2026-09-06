@@ -56,16 +56,16 @@ with st.sidebar:
             format_func=lambda value: value.replace("_", " ").title(),
         )
         st.caption("Load real datasets in Operational Data to replace this fallback scope.")
-    st.subheader("Source context")
-    days = st.slider("Look-back window", 1, 30, 7)
-    radius_km = st.slider("Event radius (km)", 100, 1000, 500, 50)
-    min_magnitude = st.slider("Minimum earthquake magnitude", 0.0, 6.0, 2.5, 0.5)
+    with st.expander("Source context controls", expanded=False):
+        days = st.slider("Look-back window", 1, 30, 7)
+        radius_km = st.slider("Event radius (km)", 100, 1000, 500, 50)
+        min_magnitude = st.slider("Minimum earthquake magnitude", 0.0, 6.0, 2.5, 0.5)
     refresh_label = "Show offline source state" if is_offline else "Refresh live sources"
     refresh_live = st.button(refresh_label, type="primary", width="stretch")
     if is_offline:
         st.caption("Offline field mode is active. Refresh records source unavailability without making network calls.")
     else:
-        st.caption("Refresh is operator-controlled and independent sources are fetched concurrently for lower latency.")
+        st.caption("Refresh is operator-controlled; live context remains separate from baseline risk.")
 
 try:
     if resolved:
@@ -100,35 +100,40 @@ render_kpi_strip([
 ])
 
 st.markdown("## Incident decision picture")
-left, middle, right = st.columns([1.35, 1, 1], gap="large")
-
 top = habitations.sort_values("risk_score", ascending=False).iloc[0]
-with left:
-    st.markdown(f"### {top['name']}")
-    render_risk_badge(top["risk_level"])
-    st.metric("Explainable Risk Score", f"{float(top['risk_score']):.1f} / 100")
-    st.write(f"**Relocation priority:** {top['relocation_priority']}")
-    st.write(f"**Population:** {int(top['population']):,}")
-    st.write(f"**Risk drivers:** {top['risk_drivers']}")
-    st.caption("This remains decision support. The system does not issue an evacuation order.")
-with middle:
+safe_inventory = len(shelters[shelters.get("safety_score", 100) >= 50]) if "safety_score" in shelters.columns else len(shelters)
+render_risk_badge(top["risk_level"])
+render_kpi_strip([
+    ("Highest Risk", f"{float(top['risk_score']):.1f}/100", str(top["name"])),
+    ("Population", f"{int(top['population']):,}", "Highest-priority habitation"),
+    ("Relocation Priority", top["relocation_priority"], "Decision-support priority"),
+    ("Safe Inventory", safe_inventory, "Records meeting safety threshold"),
+    ("Hazard Completeness", f"{float(top.get('hazard_data_completeness', 0)):.0f}%", "Evidence completeness"),
+])
+st.write(f"**Risk drivers:** {top['risk_drivers']}")
+st.caption("This remains decision support. The system does not issue an evacuation order.")
+
+picture_left, picture_right = st.columns(2, gap="large")
+with picture_left:
     render_source_card(
         "Capacity gate",
         f"{int(summary['available_shelter_capacity']):,} available",
         "Safety and limiting-resource capacity are hard constraints before shelter ranking or optimization.",
     )
-    st.metric("Safe inventory records", len(shelters[shelters.get("safety_score", 100) >= 50]) if "safety_score" in shelters.columns else len(shelters))
-with right:
+with picture_right:
     render_source_card(
         "Analytical model",
         "Explainable / deterministic",
         "Risk = 0.35H + 0.25E + 0.25V + 0.15A. External context remains isolated until calibrated.",
     )
-    st.metric("Hazard completeness", f"{float(top.get('hazard_data_completeness', 0)):.0f}%")
 
+priority_rows = habitations.sort_values("risk_score", ascending=False)
 st.markdown("### Highest-priority habitations")
 cols = [c for c in ["name", "population", "risk_score", "risk_level", "relocation_priority", "risk_drivers"] if c in habitations.columns]
-st.dataframe(habitations[cols].sort_values("risk_score", ascending=False), width="stretch", hide_index=True)
+st.dataframe(priority_rows[cols].head(10), width="stretch", hide_index=True)
+if len(priority_rows) > 10:
+    with st.expander(f"Full priority register · {len(priority_rows)} records", expanded=False):
+        st.dataframe(priority_rows[cols], width="stretch", hide_index=True)
 
 st.divider()
 st.markdown("## Source console")
@@ -156,7 +161,7 @@ if snapshot is None:
     if is_offline:
         st.info("Offline field mode is active. The deterministic workflow above is available now; click **Show offline source state** to record which external sources are intentionally disabled.")
     else:
-        st.info("Click **Refresh live sources** to load the real-time situational layer. The deterministic relocation workflow above is already available offline.")
+        st.info("Click **Refresh live sources** to load the situational layer. The deterministic relocation workflow above is already available offline.")
 else:
     if snapshot.get("offline"):
         st.warning("Offline field mode: no current network observations were requested. External sources below are explicitly marked OFFLINE.")
@@ -167,39 +172,57 @@ else:
     current_air = air.get("current", {}) or {}
     weather_units = weather.get("current_units", {}) or {}
     air_units = air.get("current_units", {}) or {}
+    health_df = pd.DataFrame(snapshot["source_health"])
 
-    status_cols = st.columns(7, gap="small")
-    health_lookup = {row["source"]: row for row in snapshot["source_health"]}
-    for column, key, label in [
-        (status_cols[0], "weather", "Weather"),
-        (status_cols[1], "air_quality", "Air"),
-        (status_cols[2], "usgs", "USGS"),
-        (status_cols[3], "gdacs", "GDACS"),
-        (status_cols[4], "eonet", "EONET"),
-        (status_cols[5], "imd", "IMD"),
-        (status_cols[6], "sachet", "SACHET"),
-    ]:
-        with column:
-            st.markdown(f"**{label}**")
-            if health_lookup[key].get("access_status") == "OFFLINE":
-                st.caption("OFFLINE")
-            else:
-                render_data_mode_indicator(health_lookup[key]["mode"])
-                if health_lookup[key].get("stale"):
-                    st.caption("STALE CACHE")
+    mode_values = health_df.get("mode", pd.Series(dtype=str)).astype(str).str.upper()
+    access_values = health_df.get("access_status", pd.Series(dtype=str)).astype(str).str.upper()
+    stale_values = health_df.get("stale", pd.Series(dtype=bool)).astype(str).str.lower()
+    error_values = health_df.get("error", pd.Series(dtype=str)).fillna("").astype(str).str.strip()
+    usable_count = int(mode_values.isin(["LIVE", "CACHED"]).sum())
+    offline_count = int(access_values.eq("OFFLINE").sum())
+    stale_count = int(stale_values.eq("true").sum())
+    error_count = int(error_values.ne("").sum())
+    render_kpi_strip([
+        ("Usable Sources", usable_count, "LIVE or CACHED context"),
+        ("Offline-disabled", offline_count, "Intentionally unavailable offline"),
+        ("Stale Cache", stale_count, "Cached source marked stale"),
+        ("Needs Attention", error_count, "Sources reporting an error"),
+    ])
 
-    live_metrics = st.columns(6, gap="small")
     temperature = current_weather.get("temperature_2m")
     precipitation = current_weather.get("precipitation")
     wind = current_weather.get("wind_speed_10m")
     aqi = current_air.get("us_aqi")
     pm25 = current_air.get("pm2_5")
-    live_metrics[0].metric("Temperature", f"{temperature} {weather_units.get('temperature_2m', '')}" if temperature is not None else "—")
-    live_metrics[1].metric("Precipitation", f"{precipitation} {weather_units.get('precipitation', '')}" if precipitation is not None else "—")
-    live_metrics[2].metric("Wind", f"{wind} {weather_units.get('wind_speed_10m', '')}" if wind is not None else "—")
-    live_metrics[3].metric("US AQI", aqi if aqi is not None else "—")
-    live_metrics[4].metric("PM2.5", f"{pm25} {air_units.get('pm2_5', '')}" if pm25 is not None else "—")
-    live_metrics[5].metric("Nearby Events", len(snapshot["events"]))
+    render_kpi_strip([
+        ("Temperature", f"{temperature} {weather_units.get('temperature_2m', '')}" if temperature is not None else "—", "Current source value"),
+        ("Precipitation", f"{precipitation} {weather_units.get('precipitation', '')}" if precipitation is not None else "—", "Current source value"),
+        ("Wind", f"{wind} {weather_units.get('wind_speed_10m', '')}" if wind is not None else "—", "10 m wind speed"),
+        ("US AQI", aqi if aqi is not None else "—", "Air-quality context"),
+        ("PM2.5", f"{pm25} {air_units.get('pm2_5', '')}" if pm25 is not None else "—", "Air-quality context"),
+        ("Nearby Events", len(snapshot["events"]), "Matching query window"),
+    ])
+
+    with st.expander("Per-source status", expanded=False):
+        health_lookup = {row["source"]: row for row in snapshot["source_health"]}
+        source_status = st.columns(4, gap="small")
+        for index, (key, label) in enumerate([
+            ("weather", "Weather"),
+            ("air_quality", "Air"),
+            ("usgs", "USGS"),
+            ("gdacs", "GDACS"),
+            ("eonet", "EONET"),
+            ("imd", "IMD"),
+            ("sachet", "SACHET"),
+        ]):
+            with source_status[index % len(source_status)]:
+                st.markdown(f"**{label}**")
+                if health_lookup[key].get("access_status") == "OFFLINE":
+                    st.caption("OFFLINE")
+                else:
+                    render_data_mode_indicator(health_lookup[key]["mode"])
+                    if health_lookup[key].get("stale"):
+                        st.caption("STALE CACHE")
 
     event_col, health_col = st.columns([1.45, 1], gap="large")
     with event_col:
@@ -221,25 +244,22 @@ else:
             )
     with health_col:
         st.markdown("### Source diagnostics")
-        diagnostics = pd.DataFrame(snapshot["source_health"])
-        if not diagnostics.empty:
-            diagnostics = diagnostics.astype(str)
-            st.dataframe(diagnostics, width="stretch", hide_index=True)
+        if not health_df.empty:
+            st.dataframe(health_df.astype(str), width="stretch", hide_index=True)
         st.caption(f"Snapshot generated: {snapshot['generated_at']}")
         st.warning("External observations are corroborating evidence only until a verified source-specific calibration is approved for analytical scoring.")
 
-st.divider()
-st.markdown("## Operator workflow")
-workflow = st.columns(5, gap="small")
-steps = [
-    ("01", "Detect", "Refresh source context when connected; preserve explicit offline state when disconnected."),
-    ("02", "Prioritize", "Use explainable risk and relocation priority."),
-    ("03", "Validate", "Reject unsafe/full sites and inspect capacity evidence."),
-    ("04", "Move", "Select a safe candidate and verify route provenance."),
-    ("05", "Brief", "Export a reviewable draft action plan with assumptions."),
-]
-for column, (number, title, text) in zip(workflow, steps):
-    with column:
-        render_source_card(f"{number} · {title}", "EOC step", text)
+with st.expander("Operator workflow · 5 steps", expanded=False):
+    workflow = st.columns(5, gap="small")
+    steps = [
+        ("01", "Detect", "Refresh source context when connected; preserve explicit offline state when disconnected."),
+        ("02", "Prioritize", "Use explainable risk and relocation priority."),
+        ("03", "Validate", "Reject unsafe/full sites and inspect capacity evidence."),
+        ("04", "Move", "Select a safe candidate and verify route provenance."),
+        ("05", "Brief", "Export a reviewable draft action plan with assumptions."),
+    ]
+    for column, (number, title, text) in zip(workflow, steps):
+        with column:
+            render_source_card(f"{number} · {title}", "EOC step", text)
 
 render_disclaimer()
