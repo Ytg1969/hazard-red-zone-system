@@ -5,6 +5,7 @@ import streamlit as st
 
 from src.live_operations import fetch_operations_snapshot
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data
+from src.runtime_mode import offline_mode
 from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import (
     inject_global_css,
@@ -16,13 +17,14 @@ from src.ui_theme import (
     render_source_card,
 )
 
-st.set_page_config(page_title="Operations Hub", page_icon="EOC", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Operations Hub", page_icon="EOC", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
 render_page_header(
     "Operations Hub",
-    "Real-time situational awareness + explainable relocation planning for SIH26191. External context is source-labelled and never silently changes the baseline risk model.",
+    "Situational awareness + explainable relocation planning. External context is source-labelled and never silently changes the baseline risk model.",
 )
 
+is_offline = offline_mode()
 resolved = None
 try:
     resolved = resolve_operational_workspace(auto_configured=True)
@@ -54,12 +56,16 @@ with st.sidebar:
             format_func=lambda value: value.replace("_", " ").title(),
         )
         st.caption("Load real datasets in Operational Data to replace this fallback scope.")
-    st.subheader("Live context")
+    st.subheader("Source context")
     days = st.slider("Look-back window", 1, 30, 7)
     radius_km = st.slider("Event radius (km)", 100, 1000, 500, 50)
     min_magnitude = st.slider("Minimum earthquake magnitude", 0.0, 6.0, 2.5, 0.5)
-    refresh_live = st.button("Refresh live sources", type="primary", width="stretch")
-    st.caption("Refresh is operator-controlled and independent sources are fetched concurrently for lower latency.")
+    refresh_label = "Show offline source state" if is_offline else "Refresh live sources"
+    refresh_live = st.button(refresh_label, type="primary", width="stretch")
+    if is_offline:
+        st.caption("Offline field mode is active. Refresh records source unavailability without making network calls.")
+    else:
+        st.caption("Refresh is operator-controlled and independent sources are fetched concurrently for lower latency.")
 
 try:
     if resolved:
@@ -138,7 +144,7 @@ cols = [c for c in ["name", "population", "risk_score", "risk_level", "relocatio
 st.dataframe(habitations[cols].sort_values("risk_score", ascending=False), width="stretch", hide_index=True)
 
 st.divider()
-st.markdown("## Real-time source console")
+st.markdown("## Source console")
 
 if operational_payload:
     center = operational_payload["center"]
@@ -152,15 +158,21 @@ if operational_payload:
 else:
     live_kwargs = {"days": days, "radius_km": radius_km, "min_magnitude": min_magnitude}
 
-snapshot_key = f"operations_snapshot_{scope_label}_{days}_{radius_km}_{min_magnitude}"
+snapshot_key = f"operations_snapshot_{scope_label}_{days}_{radius_km}_{min_magnitude}_{'offline' if is_offline else 'connected'}"
 if refresh_live:
-    with st.spinner("Refreshing weather, air quality, earthquake, disaster-event and official-source context in parallel..."):
+    spinner_text = "Recording offline source state..." if is_offline else "Refreshing weather, air quality, earthquake, disaster-event and official-source context in parallel..."
+    with st.spinner(spinner_text):
         st.session_state[snapshot_key] = fetch_operations_snapshot(scope_label, **live_kwargs)
 
 snapshot = st.session_state.get(snapshot_key)
 if snapshot is None:
-    st.info("Click **Refresh live sources** to load the real-time situational layer. The deterministic relocation workflow above is already available offline.")
+    if is_offline:
+        st.info("Offline field mode is active. The deterministic workflow above is available now; click **Show offline source state** to record which external sources are intentionally disabled.")
+    else:
+        st.info("Click **Refresh live sources** to load the real-time situational layer. The deterministic relocation workflow above is already available offline.")
 else:
+    if snapshot.get("offline"):
+        st.warning("Offline field mode: no current network observations were requested. External sources below are explicitly marked OFFLINE.")
     sources = snapshot["sources"]
     weather = sources["weather"]
     air = sources["air_quality"]
@@ -182,9 +194,12 @@ else:
     ]:
         with column:
             st.markdown(f"**{label}**")
-            render_data_mode_indicator(health_lookup[key]["mode"])
-            if health_lookup[key].get("stale"):
-                st.caption("STALE CACHE")
+            if health_lookup[key].get("access_status") == "OFFLINE":
+                st.caption("OFFLINE")
+            else:
+                render_data_mode_indicator(health_lookup[key]["mode"])
+                if health_lookup[key].get("stale"):
+                    st.caption("STALE CACHE")
 
     live_metrics = st.columns(6, gap="small")
     temperature = current_weather.get("temperature_2m")
@@ -204,7 +219,8 @@ else:
         st.markdown("### Nearby event register")
         events = pd.DataFrame(snapshot["events"])
         if events.empty:
-            st.success("No matching nearby event was returned for the selected time/radius window.")
+            message = "No live event register is loaded in offline mode." if snapshot.get("offline") else "No matching nearby event was returned for the selected time/radius window."
+            st.info(message)
         else:
             event_columns = [c for c in ["source", "type", "event", "magnitude", "distance_km", "time", "url"] if c in events.columns]
             st.dataframe(events[event_columns].head(50), width="stretch", hide_index=True)
@@ -223,13 +239,13 @@ else:
             diagnostics = diagnostics.astype(str)
             st.dataframe(diagnostics, width="stretch", hide_index=True)
         st.caption(f"Snapshot generated: {snapshot['generated_at']}")
-        st.warning("Live observations are corroborating evidence only until a verified source-specific calibration is approved for analytical scoring.")
+        st.warning("External observations are corroborating evidence only until a verified source-specific calibration is approved for analytical scoring.")
 
 st.divider()
 st.markdown("## Operator workflow")
 workflow = st.columns(5, gap="small")
 steps = [
-    ("01", "Detect", "Refresh source context and inspect current conditions."),
+    ("01", "Detect", "Refresh source context when connected; preserve explicit offline state when disconnected."),
     ("02", "Prioritize", "Use explainable risk and relocation priority."),
     ("03", "Validate", "Reject unsafe/full sites and inspect capacity evidence."),
     ("04", "Move", "Select a safe candidate and verify route provenance."),
