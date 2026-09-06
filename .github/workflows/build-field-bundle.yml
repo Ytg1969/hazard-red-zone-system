@@ -11,15 +11,27 @@ on:
         options:
           - puri
           - all-demo-cities
+  workflow_run:
+    workflows: ["Deployment Smoke"]
+    types:
+      - completed
+    branches:
+      - main
 
 jobs:
   windows-field-bundle:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 50
+    env:
+      BUILD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      ROAD_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.road_scope || 'all-demo-cities' }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout exact release commit
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BUILD_SHA }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -38,7 +50,7 @@ jobs:
       - name: Cache road network
         shell: pwsh
         run: |
-          if ("${{ inputs.road_scope }}" -eq "all-demo-cities") {
+          if ("${{ env.ROAD_SCOPE }}" -eq "all-demo-cities") {
             python scripts/cache_road_network.py --demo-cities
           } else {
             python scripts/cache_road_network.py "Puri, Odisha, India"
@@ -68,11 +80,13 @@ jobs:
           @"
           HAZARD COMMAND — OFFLINE FIELD BUNDLE BUILD RECORD
           repository=${{ github.repository }}
-          commit_sha=${{ github.sha }}
+          commit_sha=${{ env.BUILD_SHA }}
           workflow=${{ github.workflow }}
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
-          road_scope=${{ inputs.road_scope }}
+          trigger_event=${{ github.event_name }}
+          source_deployment_run_id=${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || 'manual' }}
+          road_scope=${{ env.ROAD_SCOPE }}
           built_at_utc=$buildUtc
           "@ | Set-Content -Encoding UTF8 field-bundle\BUILD_INFO.txt
 

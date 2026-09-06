@@ -11,6 +11,9 @@ def test_field_bundle_workflow_contains_offline_contract():
     text = WORKFLOW.read_text(encoding="utf-8")
     required_fragments = [
         "workflow_dispatch:",
+        "workflow_run:",
+        'workflows: ["Deployment Smoke"]',
+        "github.event.workflow_run.conclusion == 'success'",
         "runs-on: windows-latest",
         "python-version: \"3.12\"",
         "pip download --only-binary=:all:",
@@ -27,16 +30,32 @@ def test_field_bundle_workflow_contains_offline_contract():
         assert fragment in text, f"field bundle workflow is missing required contract: {fragment}"
 
 
+def test_automatic_bundle_uses_exact_green_main_commit_and_full_demo_roads():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    required_fragments = [
+        "branches:\n      - main",
+        "BUILD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}",
+        "ROAD_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.road_scope || 'all-demo-cities' }}",
+        "Checkout exact release commit",
+        "ref: ${{ env.BUILD_SHA }}",
+        'if ("${{ env.ROAD_SCOPE }}" -eq "all-demo-cities")',
+    ]
+    for fragment in required_fragments:
+        assert fragment in text, f"automatic bundle workflow is missing release binding: {fragment}"
+
+
 def test_field_bundle_records_exact_build_provenance():
     text = WORKFLOW.read_text(encoding="utf-8")
     required_fragments = [
         "field-bundle\\BUILD_INFO.txt",
         "repository=${{ github.repository }}",
-        "commit_sha=${{ github.sha }}",
+        "commit_sha=${{ env.BUILD_SHA }}",
         "workflow=${{ github.workflow }}",
         "run_id=${{ github.run_id }}",
         "run_number=${{ github.run_number }}",
-        "road_scope=${{ inputs.road_scope }}",
+        "trigger_event=${{ github.event_name }}",
+        "source_deployment_run_id=${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || 'manual' }}",
+        "road_scope=${{ env.ROAD_SCOPE }}",
         "built_at_utc=$buildUtc",
         "Keep BUILD_INFO.txt with the bundle",
     ]
