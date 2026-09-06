@@ -9,13 +9,15 @@ from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data, lo
 from src.relocation import allocate_population, rank_shelters
 from src.report_generator import generate_action_plan, generate_action_plan_pdf
 from src.risk_engine import calculate_risk
+from src.runtime_mode import offline_mode
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
 
-st.set_page_config(page_title="Relocation Planner", layout="wide")
+st.set_page_config(page_title="Relocation Planner", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
-render_page_header("Relocation Planner", "Capacity-safe relocation planning using the active operational workspace or the bundled fallback dataset.")
+render_page_header("Relocation Planner", "Choose a safe relocation site, verify capacity and route evidence, then export a reviewable action plan.")
 
+is_offline = offline_mode()
 resolved = None
 try:
     resolved = resolve_operational_workspace(auto_configured=True)
@@ -85,12 +87,16 @@ st.caption(f"Operational scope: **{area_label}** · Hazard profile: **{hazard_pr
 if operational and hazard_source:
     st.caption(f"Calibrated hazard source: **{hazard_source.get('label', 'GeoJSON')}** · {hazard_source.get('mode', 'SESSION')}")
 
-st.markdown("### 2 · Compare safe relocation sites")
+st.markdown("### 2 · Compare qualified relocation sites")
 use_live_routing = st.checkbox(
     "Use live OSRM road distance when a local cached road graph is unavailable",
     value=False,
+    disabled=is_offline,
     help="Road routing improves distance/travel-time evidence but does not include live traffic, road closures or hazard avoidance. If unavailable, the planner falls back visibly to cached/straight-line distance.",
 )
+if is_offline:
+    st.caption("Offline field mode disables live OSRM. A local cached road graph is still used when configured; otherwise route distance falls back explicitly.")
+
 ranked = rank_shelters(
     habitation,
     local_shelters.to_dict(orient="records"),
@@ -101,22 +107,18 @@ if not ranked:
     render_disclaimer()
     st.stop()
 ranked_df = pd.DataFrame(ranked)
-show_cols = [c for c in [
+
+compact_cols = [c for c in [
     "shelter_name",
     "suitability_score",
     "distance_km",
-    "travel_time_min",
-    "route_status",
-    "routing_mode",
-    "safety_score",
-    "accessibility_score",
     "available_capacity",
     "limiting_resource_label",
-    "capacity_evidence_completeness_pct",
-    "capacity_utilization_pct",
-    "capacity_validation_status",
+    "route_status",
 ] if c in ranked_df.columns]
-st.dataframe(ranked_df[show_cols], width="stretch", hide_index=True)
+st.dataframe(ranked_df[compact_cols].head(8), width="stretch", hide_index=True)
+if len(ranked_df) > 8:
+    st.caption(f"Showing the top 8 of {len(ranked_df)} qualified sites. Full evidence remains available below.")
 
 road_modes = {"cached_osm_graph", "osrm_live", "osrm_cached"}
 road_candidate_count = sum(1 for item in ranked if item.get("routing_mode") in road_modes)
@@ -125,16 +127,8 @@ if road_candidate_count:
 else:
     st.warning("No road-network route is active for the qualified sites; current ranking uses explicit straight-line fallback distance.")
 
-visual_left, visual_right = st.columns(2, gap="large")
-with visual_left:
-    st.bar_chart(ranked_df.head(6).set_index("shelter_name")["available_capacity"])
-    st.caption("Available capacity after limiting-resource and occupancy constraints.")
-with visual_right:
-    fig = px.bar(ranked_df.head(5), x="shelter_name", y="suitability_score", title="Top relocation-site suitability", labels={"shelter_name": "Site", "suitability_score": "Suitability / 100"})
-    st.plotly_chart(fig, width="stretch")
-
 recommended = ranked[0]
-st.markdown("### 3 · Primary recommendation and population split")
+st.markdown("### 3 · Primary recommendation")
 left, right = st.columns([1, 1.35], gap="large")
 with left:
     st.success(f"Recommended primary site: {recommended['shelter_name']}")
@@ -167,6 +161,7 @@ with left:
     if missing:
         st.warning("Missing capacity evidence: " + ", ".join(str(value).replace("_capacity", "").replace("_", " ").title() for value in missing))
 with right:
+    st.markdown("#### Population allocation")
     allocation = allocate_population(habitation, local_shelters.to_dict(orient="records"))
     a1, a2, a3 = st.columns(3)
     a1.metric("Required", f"{allocation['required_population']:,}")
@@ -178,6 +173,33 @@ with right:
         st.warning("Safe capacity is insufficient; the deficit remains explicit rather than overfilling a site.")
     else:
         st.success("The current safe-site set can accommodate the full habitation population.")
+
+with st.expander("Compare qualified sites visually", expanded=False):
+    visual_left, visual_right = st.columns(2, gap="large")
+    with visual_left:
+        st.bar_chart(ranked_df.head(6).set_index("shelter_name")["available_capacity"])
+        st.caption("Available capacity after limiting-resource and occupancy constraints.")
+    with visual_right:
+        fig = px.bar(ranked_df.head(5), x="shelter_name", y="suitability_score", title="Top relocation-site suitability", labels={"shelter_name": "Site", "suitability_score": "Suitability / 100"})
+        st.plotly_chart(fig, width="stretch")
+
+with st.expander("Detailed site evidence", expanded=False):
+    detail_cols = [c for c in [
+        "shelter_name",
+        "suitability_score",
+        "distance_km",
+        "travel_time_min",
+        "route_status",
+        "routing_mode",
+        "safety_score",
+        "accessibility_score",
+        "available_capacity",
+        "limiting_resource_label",
+        "capacity_evidence_completeness_pct",
+        "capacity_utilization_pct",
+        "capacity_validation_status",
+    ] if c in ranked_df.columns]
+    st.dataframe(ranked_df[detail_cols], width="stretch", hide_index=True)
 
 with st.expander("Carrying-capacity evidence across qualified sites", expanded=False):
     evidence_cols = [c for c in [
