@@ -67,6 +67,7 @@ def test_operations_snapshot_preserves_context_only_contract(monkeypatch):
     assert result["analytical_effect"] == "CONTEXT_ONLY"
     assert len(result["source_health"]) == 7
     assert result["sources"]["weather"]["mode"] == "LIVE"
+    assert result["offline"] is False
 
 
 def test_operations_snapshot_accepts_arbitrary_coordinates(monkeypatch):
@@ -82,6 +83,29 @@ def test_operations_snapshot_accepts_arbitrary_coordinates(monkeypatch):
     assert result["latitude"] == 16.5062
     assert result["longitude"] == 80.648
     assert result["analytical_effect"] == "CONTEXT_ONLY"
+
+
+def test_operations_snapshot_offline_mode_makes_no_network_calls(monkeypatch):
+    monkeypatch.setenv("SIH_OFFLINE_MODE", "true")
+
+    def should_not_run(*args, **kwargs):
+        raise AssertionError("network adapter must not run in offline mode")
+
+    monkeypatch.setattr(live_operations, "fetch_weather_at_location", should_not_run)
+    monkeypatch.setattr(live_operations, "fetch_air_quality_at_location", should_not_run)
+    monkeypatch.setattr(live_operations, "fetch_recent_earthquakes_at_location", should_not_run)
+    monkeypatch.setattr(live_operations, "fetch_gdacs_events", should_not_run)
+    monkeypatch.setattr(live_operations, "fetch_eonet_events", should_not_run)
+    monkeypatch.setattr(live_operations, "fetch_imd_context", should_not_run)
+    monkeypatch.setattr(live_operations, "fetch_disaster_alerts", should_not_run)
+
+    result = live_operations.fetch_operations_snapshot("Puri")
+
+    assert result["offline"] is True
+    assert result["events"] == []
+    assert len(result["source_health"]) == 7
+    assert {row["access_status"] for row in result["source_health"]} == {"OFFLINE"}
+    assert result["sources"]["weather"]["current"] == {}
 
 
 def test_operations_snapshot_requires_coordinates_for_unknown_location():
