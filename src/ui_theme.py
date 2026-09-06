@@ -197,6 +197,43 @@ def inject_global_css() -> None:
         }
         [data-testid="stMetricValue"] { font-weight:800; letter-spacing:-.045em; }
         [data-testid="stMetricLabel"] { color:#91A3B5; font-size:.76rem; }
+        .hz-kpi-grid {
+          display:grid;
+          grid-template-columns:repeat(auto-fit,minmax(145px,1fr));
+          gap:.7rem;
+          margin:.18rem 0 1rem;
+        }
+        .hz-kpi-item {
+          min-width:0;
+          border:1px solid var(--hz-border);
+          border-radius:15px;
+          padding:.92rem 1rem;
+          background:linear-gradient(145deg,rgba(255,255,255,.042),rgba(255,255,255,.012));
+          box-shadow:0 10px 28px rgba(0,0,0,.12);
+        }
+        .hz-kpi-label {
+          color:#8EA1B5;
+          font-size:.66rem;
+          font-weight:800;
+          letter-spacing:.055em;
+          text-transform:uppercase;
+          line-height:1.28;
+        }
+        .hz-kpi-value {
+          color:#F4F7FB;
+          font-size:1.48rem;
+          font-weight:820;
+          letter-spacing:-.045em;
+          line-height:1.08;
+          margin:.38rem 0 .24rem;
+          overflow-wrap:anywhere;
+        }
+        .hz-kpi-detail {
+          color:#7F92A6;
+          font-size:.69rem;
+          line-height:1.35;
+          min-height:.92rem;
+        }
         [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stVegaLiteChart"] {
           border:1px solid var(--hz-border);
           border-radius:16px;
@@ -257,6 +294,11 @@ def inject_global_css() -> None:
           p,li { line-height:1.52; }
           [data-testid="stMetric"] { border-radius:13px; padding:.82rem .9rem; min-height:88px; }
           [data-testid="stMetricValue"] { font-size:1.35rem; }
+          .hz-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; margin:.12rem 0 .78rem; }
+          .hz-kpi-item { border-radius:13px; padding:.72rem .76rem; box-shadow:none; }
+          .hz-kpi-label { font-size:.58rem; letter-spacing:.04em; }
+          .hz-kpi-value { font-size:1.18rem; margin:.3rem 0 .18rem; }
+          .hz-kpi-detail { font-size:.62rem; min-height:0; }
           [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stVegaLiteChart"] { border-radius:13px; box-shadow:none; overflow-x:auto; }
           iframe[title="streamlit_folium.st_folium"] { border-radius:13px!important; min-height:380px!important; height:56vh!important; box-shadow:none!important; }
           .stTabs [data-baseweb="tab-list"] { overflow-x:auto; overflow-y:hidden; flex-wrap:nowrap; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
@@ -401,9 +443,24 @@ def render_risk_badge(level: str) -> None:
 
 
 def render_kpi_strip(metrics: list[tuple[str, object, str | None]]) -> None:
-    columns = st.columns(len(metrics))
-    for column, (label, value, help_text) in zip(columns, metrics):
-        column.metric(label, value, help=help_text)
+    if not metrics:
+        return
+    cards = []
+    for label, value, help_text in metrics:
+        safe_label = html.escape(str(label))
+        safe_value = html.escape(str(value))
+        detail = html.escape(str(help_text)) if help_text else ""
+        cards.append(
+            "<div class='hz-kpi-item' role='group' aria-label='" + html.escape(str(label), quote=True) + "'>"
+            f"<div class='hz-kpi-label'>{safe_label}</div>"
+            f"<div class='hz-kpi-value'>{safe_value}</div>"
+            f"<div class='hz-kpi-detail'>{detail}</div>"
+            "</div>"
+        )
+    st.markdown(
+        "<div class='hz-kpi-grid' role='group' aria-label='Key metrics'>" + "".join(cards) + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_empty_state(message: str) -> None:
