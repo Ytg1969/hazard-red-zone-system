@@ -29,8 +29,10 @@ The workflow intentionally fails instead of uploading a bundle if:
 
 - a required Windows wheel cannot be downloaded;
 - the requested road graph cannot be generated;
-- strict Puri road-cache preflight fails;
+- the Puri GraphML cannot be loaded and used to compute a real `cached_osm_graph` route between a bundled Puri habitation and a safety/capacity-qualified shelter;
 - the deterministic demo or offline production gate fails during strict preflight.
+
+This means `Road-aware Puri routing: READY` proves more than file presence: the same cached-routing path used by the app successfully produced a road-network route without live OSRM.
 
 Because road generation depends on public OpenStreetMap/Overpass services, a transient upstream failure can require rerunning the manual workflow. Do not interpret a failed road-download run as a failure of the offline application itself.
 
@@ -52,6 +54,8 @@ Core offline workflow: PASS
 Road-aware Puri routing: READY
 Overall field gate: PASS
 ```
+
+It also prints the validated Puri habitation → shelter sample route, distance and `cached_osm_graph` provenance.
 
 Then open the laptop URL printed by the launcher. Put the phone on the same Wi-Fi/hotspot and open the printed LAN URL.
 
