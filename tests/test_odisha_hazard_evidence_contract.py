@@ -11,8 +11,9 @@ def test_odisha_evidence_records_authoritative_sources_and_period():
     assert "EVIDENCE VERIFIED · ANALYTICAL CUTOVER BLOCKED" in text
     assert "https://www.osdma.org/wp-content/uploads/2019/09/Flood-Hazard-Atlas.pdf" in text
     assert "https://bhuvan-app1.nrsc.gov.in/disaster/usrtasks/flood/doc/or-hz.pdf" in text
+    assert "https://bhuvan-app1.nrsc.gov.in/disaster/usrtasks/flood_hz/flood_hz.php?uname=empty" in text
     assert "2001–2018" in text
-    assert "about 100" not in text.lower() or "satellite" in text.lower()
+    assert "NRSC" in text and "OSDMA" in text and "NDMA" in text
 
 
 def test_odisha_source_classes_and_puri_summary_are_preserved():
