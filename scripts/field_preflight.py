@@ -2,9 +2,9 @@
 
 This command is intentionally offline-safe. It runs the deterministic demo and
 production gates, checks runtime dependencies and launch prerequisites, and
-reports whether a cached road graph is present for road-aware offline routing.
-Missing road cache is a warning by default because the application has an
-explicit haversine fallback; use --strict-road-cache to make it a hard failure.
+validates cached Puri road routing when a GraphML file is present. Missing road
+cache is a warning by default because the application has an explicit haversine
+fallback; use --strict-road-cache to make a working cached Puri route mandatory.
 """
 from __future__ import annotations
 
@@ -23,6 +23,9 @@ if str(ROOT) not in sys.path:
 
 from scripts.demo_gate import run_demo_gate  # noqa: E402
 from scripts.production_gate import run_gate  # noqa: E402
+from src.pipeline import enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards  # noqa: E402
+from src.relocation import rank_shelters  # noqa: E402
+from src.routing import estimate_route  # noqa: E402
 
 REQUIRED_RUNTIME_MODULES = [
     "streamlit",
@@ -100,6 +103,84 @@ def _road_cache_state(root: Path = ROOT) -> dict:
     }
 
 
+def _validate_puri_road_route(root: Path, road_state: dict) -> dict:
+    """Prove the cached Puri graph can produce an app-compatible road route."""
+    if not road_state.get("puri_ready"):
+        return {
+            "attempted": False,
+            "pass": False,
+            "routing_mode": None,
+            "route_status": None,
+            "error": "Puri road cache is missing.",
+        }
+
+    graph_path = root / ROAD_CACHE_FILES["Puri"]
+    try:
+        habitations_raw, shelters_raw = load_demo_data("Puri")
+        hazards = load_demo_hazards()
+        habitations = enrich_habitations(
+            habitations_raw,
+            hazard_data=hazards,
+            hazard_type="combined",
+            add_coordination_zones=False,
+        )
+        shelters = enrich_shelters(shelters_raw)
+        if habitations.empty or shelters.empty:
+            raise RuntimeError("Puri demo data is empty")
+
+        selected = habitations.sort_values("risk_score", ascending=False).iloc[0].to_dict()
+        local_shelters = shelters
+        if selected.get("demo_city") and "demo_city" in shelters.columns:
+            local_shelters = shelters[shelters["demo_city"] == selected["demo_city"]].copy()
+
+        ranked = rank_shelters(selected, local_shelters.to_dict(orient="records"))
+        if not ranked:
+            raise RuntimeError("no Puri shelter passes the safety/capacity gates")
+        recommended = ranked[0]
+
+        origin = (float(selected["latitude"]), float(selected["longitude"]))
+        destination = (float(recommended["latitude"]), float(recommended["longitude"]))
+        route = estimate_route(
+            origin,
+            destination,
+            graphml_path=graph_path,
+            allow_live_osrm=False,
+        )
+        geometry = route.get("route_geometry") or []
+        route_ok = (
+            route.get("routing_mode") == "cached_osm_graph"
+            and route.get("route_status") == "ROAD_NETWORK_ROUTE"
+            and float(route.get("distance_km") or 0) > 0
+            and len(geometry) >= 2
+        )
+        if not route_ok:
+            raise RuntimeError(
+                "cached graph did not produce ROAD_NETWORK_ROUTE/cached_osm_graph output"
+            )
+
+        return {
+            "attempted": True,
+            "pass": True,
+            "routing_mode": route.get("routing_mode"),
+            "route_status": route.get("route_status"),
+            "distance_km": route.get("distance_km"),
+            "travel_time_min": route.get("travel_time_min"),
+            "habitation": selected.get("name"),
+            "shelter": recommended.get("shelter_name"),
+            "graph_path": str(graph_path.relative_to(root)),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "pass": False,
+            "routing_mode": None,
+            "route_status": None,
+            "graph_path": str(graph_path.relative_to(root)),
+            "error": str(exc),
+        }
+
+
 def _port_state(port: int) -> dict:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -168,6 +249,7 @@ def run_preflight(
     dependency_state = _dependency_state()
     files_state = _required_files_state(root)
     road_state = _road_cache_state(root)
+    route_validation = _validate_puri_road_route(root, road_state)
     port_state = _port_state(port)
     git_state = _git_state(root)
 
@@ -199,12 +281,18 @@ def run_preflight(
             production_pass,
         ]
     )
-    field_ready = core_ready and (road_state["puri_ready"] or not strict_road_cache)
+    road_routing_ready = bool(route_validation.get("pass"))
+    field_ready = core_ready and (road_routing_ready or not strict_road_cache)
 
     warnings = []
     if not road_state["puri_ready"]:
         warnings.append(
             "Puri road GraphML cache is missing; offline routing will visibly fall back to straight-line distance."
+        )
+    elif not road_routing_ready:
+        warnings.append(
+            "Puri road GraphML exists but failed cached-route validation: "
+            f"{route_validation.get('error') or 'unknown route error'}"
         )
     if git_state.get("available") and git_state.get("clean") is False:
         warnings.append("Working tree has uncommitted changes; present only from a known tested commit.")
@@ -221,9 +309,9 @@ def run_preflight(
     next_actions = []
     if not dependency_state["pass"]:
         next_actions.append("Install runtime dependencies: python -m pip install -r requirements.txt")
-    if not road_state["puri_ready"]:
+    if not road_state["puri_ready"] or not road_routing_ready:
         next_actions.append(
-            'While internet is available, cache Puri roads: python scripts/cache_road_network.py "Puri, Odisha, India"'
+            'While internet is available, rebuild Puri roads: python scripts/cache_road_network.py "Puri, Odisha, India"'
         )
     if not port_state["pass"]:
         next_actions.append(f"Free TCP port {port}, or set SIH_OFFLINE_PORT to another available port.")
@@ -233,7 +321,7 @@ def run_preflight(
     return {
         "field_ready": field_ready,
         "core_offline_ready": core_ready,
-        "road_routing_ready": road_state["puri_ready"],
+        "road_routing_ready": road_routing_ready,
         "strict_road_cache": bool(strict_road_cache),
         "checks": {
             "runtime_dependencies": dependency_state,
@@ -242,6 +330,7 @@ def run_preflight(
             "demo_gate": {"pass": demo_pass, "error": gate_error, "result": demo_gate},
             "production_gate": {"pass": production_pass, "error": gate_error, "result": production_gate},
             "road_cache": road_state,
+            "puri_route_validation": route_validation,
             "git": git_state,
         },
         "warnings": warnings,
@@ -254,8 +343,23 @@ def _print_human(result: dict) -> None:
     print("Hazard Command — FIELD PREFLIGHT")
     print("=" * 38)
     print(f"Core offline workflow: {'PASS' if result['core_offline_ready'] else 'FAIL'}")
-    print(f"Road-aware Puri routing: {'READY' if result['road_routing_ready'] else 'NOT CACHED'}")
+    road_cache_exists = bool(result["checks"]["road_cache"].get("puri_ready"))
+    if result["road_routing_ready"]:
+        road_label = "READY"
+    elif road_cache_exists:
+        road_label = "FAILED"
+    else:
+        road_label = "NOT CACHED"
+    print(f"Road-aware Puri routing: {road_label}")
     print(f"Overall field gate: {'PASS' if result['field_ready'] else 'FAIL'}")
+
+    route_validation = result["checks"].get("puri_route_validation", {})
+    if route_validation.get("pass"):
+        print(
+            "Validated Puri route: "
+            f"{route_validation.get('habitation')} -> {route_validation.get('shelter')} · "
+            f"{route_validation.get('distance_km')} km · {route_validation.get('routing_mode')}"
+        )
 
     git_state = result["checks"]["git"]
     if git_state.get("available"):
@@ -282,7 +386,7 @@ def main() -> int:
     parser.add_argument(
         "--strict-road-cache",
         action="store_true",
-        help="Fail the overall gate when the Puri GraphML road cache is absent.",
+        help="Fail unless the Puri GraphML cache produces a validated cached road route.",
     )
     parser.add_argument("--json", action="store_true", help="Print the complete preflight result as JSON.")
     parser.add_argument(
