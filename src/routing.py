@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -76,6 +77,43 @@ def _load_graph(path_str: str):
     return ox.load_graphml(path_str)
 
 
+@lru_cache(maxsize=8)
+def _graph_node_index(path_str: str) -> tuple[tuple[object, float, float], ...]:
+    """Cache graph node coordinates without optional OSMnx nearest-node dependencies.
+
+    OSMnx uses BallTree/scikit-learn for nearest-node lookup on unprojected
+    latitude/longitude graphs. The field runtime intentionally does not require
+    scikit-learn, so cached routing keeps its own lightweight coordinate index.
+    """
+    graph = _load_graph(path_str)
+    nodes: list[tuple[object, float, float]] = []
+    for node_id, data in graph.nodes(data=True):
+        try:
+            latitude = float(data["y"])
+            longitude = float(data["x"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        nodes.append((node_id, latitude, longitude))
+    if not nodes:
+        raise RuntimeError("Cached graph contains no nodes with usable x/y coordinates")
+    return tuple(nodes)
+
+
+def _nearest_graph_node(path_str: str, point: tuple[float, float]):
+    """Return the closest cached-graph node using local equirectangular distance."""
+    latitude = float(point[0])
+    longitude = float(point[1])
+    longitude_scale = max(abs(math.cos(math.radians(latitude))), 1e-6)
+
+    def distance_sq(item: tuple[object, float, float]) -> float:
+        _, node_latitude, node_longitude = item
+        d_lat = node_latitude - latitude
+        d_lon = (node_longitude - longitude) * longitude_scale
+        return d_lat * d_lat + d_lon * d_lon
+
+    return min(_graph_node_index(path_str), key=distance_sq)[0]
+
+
 def _edge_geometry(graph, u, v, data) -> list[list[float]]:
     """Return ordered [[lat, lon], ...] geometry for one OSM edge."""
     geometry = data.get("geometry")
@@ -115,11 +153,11 @@ def _cached_graph_route(
     average_speed_kmph: float,
 ) -> dict:
     import networkx as nx
-    import osmnx as ox
 
-    graph = _load_graph(str(path))
-    origin_node = ox.distance.nearest_nodes(graph, X=float(origin[1]), Y=float(origin[0]))
-    destination_node = ox.distance.nearest_nodes(graph, X=float(destination[1]), Y=float(destination[0]))
+    path_str = str(path)
+    graph = _load_graph(path_str)
+    origin_node = _nearest_graph_node(path_str, origin)
+    destination_node = _nearest_graph_node(path_str, destination)
     node_path = nx.shortest_path(graph, origin_node, destination_node, weight="length")
 
     length_m = 0.0

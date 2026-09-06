@@ -154,9 +154,18 @@ def _validate_puri_road_route(root: Path, road_state: dict) -> dict:
             and len(geometry) >= 2
         )
         if not route_ok:
-            raise RuntimeError(
-                "cached graph did not produce ROAD_NETWORK_ROUTE/cached_osm_graph output"
-            )
+            detail = route.get("route_note") or "no route detail was returned"
+            return {
+                "attempted": True,
+                "pass": False,
+                "routing_mode": route.get("routing_mode"),
+                "route_status": route.get("route_status"),
+                "graph_path": str(graph_path.relative_to(root)),
+                "error": (
+                    "cached graph did not produce ROAD_NETWORK_ROUTE/cached_osm_graph output; "
+                    f"route detail: {detail}"
+                ),
+            }
 
         return {
             "attempted": True,
