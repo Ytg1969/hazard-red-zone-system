@@ -7,9 +7,17 @@ from src.operational_hazards import geojson_to_gdf
 from src.pipeline import enrich_habitations, load_demo_data, load_demo_hazards
 from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
-from src.ui_theme import inject_global_css, render_data_mode_indicator, render_demo_scope_controls, render_disclaimer, render_page_header, render_risk_badge
+from src.ui_theme import (
+    inject_global_css,
+    render_data_mode_indicator,
+    render_demo_scope_controls,
+    render_disclaimer,
+    render_kpi_strip,
+    render_page_header,
+    render_risk_badge,
+)
 
-st.set_page_config(page_title="Risk Analysis", layout="wide")
+st.set_page_config(page_title="Risk Analysis", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
 render_page_header("Risk Analysis", "Explainable habitation-level H/E/V/A risk with operational or fallback demonstration inputs.")
 
@@ -61,55 +69,25 @@ selected_name = st.selectbox("Select habitation", habitations.sort_values("risk_
 habitation = habitations[habitations["name"] == selected_name].iloc[0].to_dict()
 risk = calculate_risk(habitation)
 
-left, right = st.columns([1.15, 1.85], gap="large")
-with left:
-    st.subheader(habitation["name"])
-    render_risk_badge(risk["risk_level"])
-    st.metric("Risk Score", f"{risk['risk_score']:.1f}/100")
-    st.metric("Hazard Score", f"{risk['components']['hazard']:.1f}/100")
-    st.metric("Population", f"{int(habitation['population']):,}")
-    st.metric("Vulnerable Population", f"{int(habitation['children_population'] + habitation['elderly_population']):,}")
-    st.metric("Relocation Priority", habitation["relocation_priority"])
-    if habitation.get("inside_hazard_zone") is not None:
-        st.caption(f"GIS intersection: {habitation.get('inside_hazard_zone')} · nearest hazard distance: {habitation.get('distance_to_hazard_km')} km")
-with right:
-    labels = {"hazard": "Hazard Intensity", "exposure": "Population Exposure", "vulnerability": "Vulnerability", "accessibility": "Evacuation Difficulty"}
-    rows = [{"Factor": labels[k], "Raw Score": raw, "Weight": DEFAULT_WEIGHTS[k], "Contribution": risk["contributions"][k]} for k, raw in risk["components"].items()]
-    contribution_df = pd.DataFrame(rows).sort_values("Contribution", ascending=True)
-    fig = px.bar(contribution_df, x="Contribution", y="Factor", orientation="h", text="Contribution", title="Weighted contribution to final risk")
-    fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
-    fig.update_layout(height=360, margin=dict(l=20, r=45, t=55, b=20))
-    st.plotly_chart(fig, width="stretch")
+st.subheader(habitation["name"])
+render_risk_badge(risk["risk_level"])
+render_kpi_strip([
+    ("Risk Score", f"{risk['risk_score']:.1f}/100", risk["risk_level"]),
+    ("Hazard Score", f"{risk['components']['hazard']:.1f}/100", hazard_profile.replace("_", " ").title()),
+    ("Population", f"{int(habitation['population']):,}", "Total exposed population"),
+    ("Vulnerable Population", f"{int(habitation['children_population'] + habitation['elderly_population']):,}", "Children + elderly"),
+    ("Relocation Priority", habitation["relocation_priority"], "Decision-support priority"),
+])
+if habitation.get("inside_hazard_zone") is not None:
+    st.caption(f"GIS intersection: {habitation.get('inside_hazard_zone')} · nearest hazard distance: {habitation.get('distance_to_hazard_km')} km")
 
-st.divider()
-st.subheader("Hazard evidence")
-if hazard_profile == "stored":
-    if operational and hazard_data is not None:
-        source_label = hazard_source.get("label", "Calibrated hazard GeoJSON") if hazard_source else "Calibrated hazard GeoJSON"
-        source_mode = hazard_source.get("mode", "SESSION") if hazard_source else "SESSION"
-        st.success(f"Using calibrated GIS layer: {source_label} · {source_mode}")
-        detail = {k: habitation.get(k) for k in ["gis_hazard_score", "gis_hazard_source", "gis_hazard_type", "inside_hazard_zone", "distance_to_hazard_km"] if k in habitation}
-        st.json(detail)
-    else:
-        st.info("Using the stored hazard_score supplied with the habitation dataset. No external live observation silently changes this score.")
-else:
-    try:
-        source_row = habitations_raw[habitations_raw["habitation_id"].astype(str) == str(habitation["habitation_id"])]
-        breakdown = compute_hazard_components(source_row, hazard_profile)
-        if hazard_profile == "combined":
-            model_rows = [{"Hazard": model.title(), "Score": float(breakdown[f"{model}_hazard_score"].iloc[0]), "Active Weight": float(breakdown[f"{model}_weight"].iloc[0])} for model in breakdown.attrs.get("active_models", [])]
-            st.plotly_chart(px.bar(pd.DataFrame(model_rows), x="Hazard", y="Score", color="Active Weight", range_y=[0, 100], title="Combined multi-hazard components"), width="stretch")
-            st.dataframe(pd.DataFrame(model_rows), width="stretch", hide_index=True)
-        else:
-            active_weights = breakdown.attrs.get("active_weights", {})
-            labels2 = breakdown.attrs.get("labels", {})
-            detail_rows = [{"Indicator": labels2.get(indicator, indicator), "Normalized Score": float(breakdown[indicator].iloc[0]), "Active Weight": weight, "Contribution": float(breakdown[f"{indicator}_contribution"].iloc[0])} for indicator, weight in active_weights.items()]
-            detail_df = pd.DataFrame(detail_rows).sort_values("Contribution", ascending=False)
-            st.dataframe(detail_df, width="stretch", hide_index=True)
-            st.plotly_chart(px.bar(detail_df, x="Contribution", y="Indicator", orientation="h", title=f"{hazard_profile.title()} hazard contributions"), width="stretch")
-        st.caption("Prototype indicator mappings remain transparent assumptions until replaced by a verified source-specific calibration.")
-    except Exception as exc:
-        st.info(f"Hazard indicator breakdown unavailable: {exc}")
+labels = {"hazard": "Hazard Intensity", "exposure": "Population Exposure", "vulnerability": "Vulnerability", "accessibility": "Evacuation Difficulty"}
+rows = [{"Factor": labels[k], "Raw Score": raw, "Weight": DEFAULT_WEIGHTS[k], "Contribution": risk["contributions"][k]} for k, raw in risk["components"].items()]
+contribution_df = pd.DataFrame(rows).sort_values("Contribution", ascending=True)
+fig = px.bar(contribution_df, x="Contribution", y="Factor", orientation="h", text="Contribution", title="Weighted contribution to final risk")
+fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+fig.update_layout(height=360, margin=dict(l=20, r=45, t=55, b=20))
+st.plotly_chart(fig, width="stretch")
 
 st.divider()
 summary_left, summary_right = st.columns(2, gap="large")
@@ -129,6 +107,36 @@ with summary_right:
     }
     st.info(recommendations[top_driver])
 
-st.subheader("Final risk-factor detail")
-st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+with st.expander("Hazard evidence and calibration detail", expanded=False):
+    if hazard_profile == "stored":
+        if operational and hazard_data is not None:
+            source_label = hazard_source.get("label", "Calibrated hazard GeoJSON") if hazard_source else "Calibrated hazard GeoJSON"
+            source_mode = hazard_source.get("mode", "SESSION") if hazard_source else "SESSION"
+            st.success(f"Using calibrated GIS layer: {source_label} · {source_mode}")
+            detail = {k: habitation.get(k) for k in ["gis_hazard_score", "gis_hazard_source", "gis_hazard_type", "inside_hazard_zone", "distance_to_hazard_km"] if k in habitation}
+            st.json(detail)
+        else:
+            st.info("Using the stored hazard_score supplied with the habitation dataset. No external live observation silently changes this score.")
+    else:
+        try:
+            source_row = habitations_raw[habitations_raw["habitation_id"].astype(str) == str(habitation["habitation_id"])]
+            breakdown = compute_hazard_components(source_row, hazard_profile)
+            if hazard_profile == "combined":
+                model_rows = [{"Hazard": model.title(), "Score": float(breakdown[f"{model}_hazard_score"].iloc[0]), "Active Weight": float(breakdown[f"{model}_weight"].iloc[0])} for model in breakdown.attrs.get("active_models", [])]
+                st.plotly_chart(px.bar(pd.DataFrame(model_rows), x="Hazard", y="Score", color="Active Weight", range_y=[0, 100], title="Combined multi-hazard components"), width="stretch")
+                st.dataframe(pd.DataFrame(model_rows), width="stretch", hide_index=True)
+            else:
+                active_weights = breakdown.attrs.get("active_weights", {})
+                labels2 = breakdown.attrs.get("labels", {})
+                detail_rows = [{"Indicator": labels2.get(indicator, indicator), "Normalized Score": float(breakdown[indicator].iloc[0]), "Active Weight": weight, "Contribution": float(breakdown[f"{indicator}_contribution"].iloc[0])} for indicator, weight in active_weights.items()]
+                detail_df = pd.DataFrame(detail_rows).sort_values("Contribution", ascending=False)
+                st.dataframe(detail_df, width="stretch", hide_index=True)
+                st.plotly_chart(px.bar(detail_df, x="Contribution", y="Indicator", orientation="h", title=f"{hazard_profile.title()} hazard contributions"), width="stretch")
+            st.caption("Prototype indicator mappings remain transparent assumptions until replaced by a verified source-specific calibration.")
+        except Exception as exc:
+            st.info(f"Hazard indicator breakdown unavailable: {exc}")
+
+with st.expander("Final risk-factor detail", expanded=False):
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
 render_disclaimer()
