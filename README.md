@@ -49,10 +49,10 @@ cd C:\Users\<user>\Project\hazard-red-zone-system
 git fetch origin
 git checkout main
 git pull origin main
-py -3.13 -m pip install -r requirements.txt
-py -3.13 scripts/demo_gate.py
-py -3.13 -m pytest tests -q
-py -3.13 -m streamlit run app.py
+py -3.12 -m pip install -r requirements.txt
+py -3.12 scripts/demo_gate.py
+py -3.12 -m pytest tests -q
+py -3.12 -m streamlit run app.py
 ```
 
 The demo gate checks all five named hazard profiles plus Combined Multi-Hazard, the three-city dataset, frozen risk classes, local/capacity-safe relocation, batch no-double-booking, global optimizer accounting, IMD warning-code normalization, all required pages and both Markdown/PDF export. It should report `"demo_ready": true`.
@@ -62,7 +62,7 @@ The demo gate checks all five named hazard profiles plus Combined Multi-Hazard, 
 This command is internet-dependent and optional:
 
 ```powershell
-py -3.13 scripts/api_probe.py
+py -3.12 scripts/api_probe.py
 ```
 
 It checks official IMD warning/rainfall context and USGS earthquake context for Puri, Guwahati and Chennai. It also reports the SACHET feed state. The probe never modifies risk scores or authoritative pilot data.
@@ -119,7 +119,11 @@ The adapter filters the response to the selected demo geography and decodes docu
 
 ### NDMA SACHET
 
-The application includes a CAP/RSS-compatible parser and ETag-aware cache behavior matching the official SACHET consumer guidance. Configure only a verified endpoint/identifier before presenting it as LIVE.
+The application includes a CAP/RSS-compatible parser and ETag-aware cache behavior. The WMO Register of Alerting Authorities lists NDMA India's CAP feed as:
+
+`https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml`
+
+The connector remains opt-in so deterministic offline startup does not depend on the network. Configure it with `SIH_SACHET_FEED_URL` when live NDMA alert context is required. NDMA's separate per-alert CAP XML endpoint requires an identifier and ETag-aware caching; do not invent identifiers. See `DEPLOYMENT.md` for the WMO/NDMA verification references and exact cache contract.
 
 ### USGS earthquake context
 
@@ -150,7 +154,7 @@ venv\Scripts\activate
 python -m pip install -r requirements.txt
 ```
 
-Python 3.12 remains the shared/CI target; Python 3.13 can be used locally when dependencies install cleanly.
+Python 3.12 is the shared CI, release-candidate and Windows offline-bundle target.
 
 ## Docker
 

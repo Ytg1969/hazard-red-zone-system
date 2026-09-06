@@ -1,5 +1,4 @@
-# Optional dependencies for building/using local cached OSM GraphML routes.
-# Streamlit Community Cloud can use the OSRM -> cached OSRM -> haversine
-# fallback chain without installing OSMnx.
+# Compatibility alias for local cached OSM GraphML routing installs.
+# OSMnx is now a pinned direct production dependency in requirements.txt,
+# so this profile must not add a second unpinned declaration.
 -r requirements.txt
-osmnx

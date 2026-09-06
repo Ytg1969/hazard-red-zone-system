@@ -19,7 +19,7 @@ This application is a decision-support prototype being hardened for live operati
 - `SIH_HAZARD_GEOJSON_URL` — optional HTTPS GeoJSON hazard source. Every feature must contain a numeric `hazard_score` in the range 0–100.
 - `SIH_HAZARD_CALIBRATION_CONFIRMED=true` — mandatory gate before a configured hazard GeoJSON can supply the analytical H component. Do not set this until the class/value mapping is documented and reviewed.
 - `SIH_HAZARD_SOURCE_LABEL` — optional human-readable source/layer label for hazard provenance.
-- `SIH_SACHET_FEED_URL` — verified NDMA SACHET-compatible CAP/RSS feed URL. If absent, the integration remains explicitly unconfigured rather than fabricating identifiers or alerts.
+- `SIH_SACHET_FEED_URL` — optional NDMA SACHET CAP/RSS feed URL. The WMO Register of Alerting Authorities lists NDMA India's CAP feed as `https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml`. If the variable is absent, the integration remains explicitly unconfigured rather than fabricating identifiers or alerts.
 - `SIH_ROAD_GRAPHML` — optional local OSM GraphML road-network path. If absent, routing can fall through to OSRM and then explicit straight-line fallback.
 - `SIH_REQUIRE_OPERATIONAL_DATA=true` — strict production mode. When enabled, pages that require habitation/shelter analysis stop instead of falling back to bundled synthetic demo cities if validated operational data is unavailable.
 
@@ -38,13 +38,29 @@ Never place credentials inside the repository. If an authority feed requires aut
 
 No API keys are required by the current Open-Meteo, USGS, GDACS, NASA EONET, OSM or public OSRM integrations. IMD may require client/IP authorization; authorization failures must remain visible and must not be bypassed.
 
+### NDMA SACHET source contract
+
+The public source chain used for SACHET configuration is:
+
+- WMO Register of Alerting Authorities, India / National Disaster Management Authority record: `https://alertingauthority.wmo.int/authorities.php?recId=331`
+- registered CAP/RSS feed: `https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml`
+- NDMA SACHET RSS page: `https://sachet.ndma.gov.in/CapFeed`
+- NDMA CAP XML Feed Integration Guide for Agencies: `https://sachet.ndma.gov.in/docs/Integration_Guide_For_Agencies.pdf`
+
+The registered RSS feed is suitable for alert discovery/context. NDMA documents a separate per-alert CAP XML endpoint of the form `https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=...`. Do not invent that identifier. If the project later follows RSS entries into per-alert CAP XML, NDMA requires ETag-aware client caching: store XML + ETag after HTTP 200, send `If-None-Match` on later calls, use cached XML immediately on HTTP 304, and replace XML + ETag after a changed HTTP 200 response.
+
+A failed or unavailable alert feed must remain visibly degraded; it must never be converted into an implicit "no warnings" state and never changes the analytical risk equation by itself.
+
 ## Dependency profiles
 
-- `requirements.txt` — production/Streamlit Cloud runtime. It excludes test tooling and the optional OSMnx local-graph stack to reduce deployment installation time.
-- `requirements-routing.txt` — production requirements plus OSMnx for local cached GraphML routing.
-- `requirements-dev.txt` — routing bundle plus pytest for local development/testing. Optional experimental coordination clustering dependencies belong here rather than in the production web runtime.
+The release candidate uses one pinned direct runtime set across pip and Conda.
 
-The deployed app still retains the routing fallback chain when OSMnx is absent: live OSRM → cached OSRM → explicit haversine fallback.
+- `requirements.txt` — pinned production/Streamlit runtime, including OSMnx for cached local GraphML routing.
+- `requirements-routing.txt` — compatibility alias that includes `requirements.txt`; it must not redeclare an unpinned OSMnx version.
+- `requirements-dev.txt` — production pins plus pinned pytest for local development/testing.
+- `environment.yml` — Conda Foundation environment aligned to the same direct runtime versions plus Python 3.12 and pytest.
+
+The application still retains the routing fallback chain when a local GraphML route cannot be used: live OSRM → cached OSRM → explicit haversine fallback.
 
 ## Streamlit Community Cloud
 
@@ -157,7 +173,7 @@ The following remain production prerequisites rather than hidden assumptions:
 - verified relocation-site inventories and infrastructure capacities
 - calibrated Bhuvan or other official hazard-class mappings where used numerically
 - authorized IMD access if direct API ingestion is required
-- verified SACHET production feed configuration
+- SACHET feed enabled where live NDMA alert context is required, with connectivity/cache behavior validated on the deployment network
 - documented update frequency and accountable data owner for every operational dataset
 - field validation and administrative review of relocation-site suitability
 
