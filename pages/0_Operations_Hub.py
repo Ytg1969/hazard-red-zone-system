@@ -86,19 +86,6 @@ except Exception as exc:
     render_disclaimer()
     st.stop()
 
-nav = st.columns(6, gap="small")
-links = [
-    ("Operational Data", "pages/9_Operational_Data.py"),
-    ("Red Zone Map", "pages/2_Red_Zone_Map.py"),
-    ("Risk Analysis", "pages/3_Risk_Analysis.py"),
-    ("Relocation", "pages/4_Relocation_Planner.py"),
-    ("Live Explorer", "pages/7_Live_Data_Context.py"),
-    ("Readiness", "pages/8_System_Readiness.py"),
-]
-for column, (label, page) in zip(nav, links):
-    with column:
-        st.page_link(page, label=label, use_container_width=True)
-
 scope_kind = "operational" if operational_payload else "fallback DEMO"
 st.caption(
     f"Active {scope_kind} scope: **{scope_label}** · **{hazard_profile.title()}** · baseline deterministic risk remains independent from uncalibrated live feeds."
