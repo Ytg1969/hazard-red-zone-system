@@ -1,9 +1,9 @@
 [theme]
 base = "dark"
-primaryColor = "#68AEFC"
-backgroundColor = "#08111C"
-secondaryBackgroundColor = "#101B29"
-textColor = "#EEF5FB"
+primaryColor = "#5EA7FF"
+backgroundColor = "#070B12"
+secondaryBackgroundColor = "#0D1420"
+textColor = "#F4F7FB"
 font = "sans serif"
 
 [server]
@@ -19,5 +19,6 @@ fastReruns = true
 gatherUsageStats = false
 
 [client]
-showErrorDetails = "stacktrace"
+showErrorDetails = "none"
 toolbarMode = "minimal"
+showSidebarNavigation = false

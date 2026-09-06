@@ -2,18 +2,20 @@ import html
 
 import streamlit as st
 
+from src.runtime_mode import offline_mode
+
 
 RISK_COLORS = {
-    "LOW": "#34a853",
-    "MODERATE": "#f9ab00",
-    "HIGH": "#ea8600",
-    "CRITICAL": "#dc3545",
+    "LOW": "#26C281",
+    "MODERATE": "#F7C948",
+    "HIGH": "#FF9F43",
+    "CRITICAL": "#FF5D73",
 }
 
 MODE_COLORS = {
-    "LIVE": ("#35d07f", "rgba(53,208,127,.12)"),
-    "CACHED": ("#f7b84b", "rgba(247,184,75,.12)"),
-    "DEMO": ("#7db7ff", "rgba(125,183,255,.11)"),
+    "LIVE": ("#42D392", "rgba(66,211,146,.12)"),
+    "CACHED": ("#F7C948", "rgba(247,201,72,.12)"),
+    "DEMO": ("#71B7FF", "rgba(113,183,255,.12)"),
 }
 
 DEMO_CITY_OPTIONS = ["All Demo Cities", "Puri", "Guwahati", "Chennai"]
@@ -27,347 +29,254 @@ HAZARD_PROFILE_OPTIONS = {
     "Stored / GIS score": "stored",
 }
 
+CORE_NAV = [
+    ("Overview", "app.py", "⌂"),
+    ("Operations", "pages/0_Operations_Hub.py", "◎"),
+    ("Red Zone Map", "pages/2_Red_Zone_Map.py", "◉"),
+    ("Risk Analysis", "pages/3_Risk_Analysis.py", "◒"),
+    ("Relocation", "pages/4_Relocation_Planner.py", "⇢"),
+    ("Live Context", "pages/7_Live_Data_Context.py", "◌"),
+    ("Operational Data", "pages/9_Operational_Data.py", "▦"),
+]
+
+TECH_NAV = [
+    ("System Readiness", "pages/8_System_Readiness.py"),
+    ("GIS Source Inspector", "pages/10_GIS_Source_Inspector.py"),
+    ("Hazard Calibration", "pages/11_Calibrated_Hazard_Source.py"),
+    ("Schema Mapper", "pages/12_Schema_Mapper.py"),
+    ("Methodology", "pages/6_Methodology.py"),
+    ("Scenario Studio", "pages/5_Scenario_Studio.py"),
+    ("Command Center", "pages/1_Command_Center.py"),
+]
+
+
+def _render_navigation() -> None:
+    with st.sidebar:
+        st.markdown(
+            """
+            <div class="hz-brand">
+              <div class="hz-logo">HZ</div>
+              <div><strong>Hazard Command</strong><span>SIH26191</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if offline_mode():
+            st.markdown(
+                "<div class='hz-runtime hz-runtime-offline'><span></span>OFFLINE FIELD MODE</div>"
+                "<div class='hz-runtime-note'>External source calls are disabled. Local planning remains available.</div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown('<div class="hz-nav-label">OPERATIONS</div>', unsafe_allow_html=True)
+        for label, path, icon in CORE_NAV:
+            st.page_link(path, label=f"{icon}  {label}", use_container_width=True)
+        st.markdown('<div class="hz-nav-separator"></div>', unsafe_allow_html=True)
+        with st.expander("Technical tools", expanded=False):
+            for label, path in TECH_NAV:
+                st.page_link(path, label=label, use_container_width=True)
+        st.caption("Decision support · Source-aware · Capacity constrained")
+
 
 def inject_global_css() -> None:
     st.markdown(
         """
         <style>
         :root {
-            --eoc-bg:#08111c;
-            --eoc-bg-soft:#0d1724;
-            --eoc-surface:#101b29;
-            --eoc-surface-2:#152235;
-            --eoc-surface-3:#1a2a40;
-            --eoc-border:rgba(145,166,192,.17);
-            --eoc-border-strong:rgba(125,183,255,.35);
-            --eoc-text:#eef5fb;
-            --eoc-muted:#9dadbd;
-            --eoc-accent:#68aefc;
-            --eoc-accent-2:#4fd1c5;
-            --eoc-warning:#f7b84b;
-            --eoc-danger:#ff6678;
-            --eoc-radius:18px;
-            --eoc-shadow:0 22px 60px rgba(0,0,0,.24);
+          --hz-bg:#070B12;
+          --hz-surface:#0D1420;
+          --hz-surface-2:#111B29;
+          --hz-surface-3:#162234;
+          --hz-border:rgba(163,181,203,.14);
+          --hz-border-strong:rgba(113,183,255,.38);
+          --hz-text:#F4F7FB;
+          --hz-muted:#93A4B8;
+          --hz-accent:#5EA7FF;
+          --hz-accent-2:#45D6C4;
+          --hz-shadow:0 18px 55px rgba(0,0,0,.28);
         }
-
         html { scroll-behavior:smooth; }
-        body { font-feature-settings:"ss01" 1,"cv02" 1; }
+        body { -webkit-text-size-adjust:100%; text-rendering:optimizeLegibility; }
         .stApp {
-            background:
-                radial-gradient(circle at 8% -6%, rgba(63,139,227,.14), transparent 27%),
-                radial-gradient(circle at 94% 4%, rgba(79,209,197,.08), transparent 24%),
-                linear-gradient(180deg,#08111c 0%,#0b1521 38%,#09121d 100%);
-            color:var(--eoc-text);
+          background:
+            radial-gradient(circle at 20% -10%, rgba(94,167,255,.13), transparent 34%),
+            radial-gradient(circle at 90% 0%, rgba(69,214,196,.06), transparent 25%),
+            var(--hz-bg);
+          color:var(--hz-text);
         }
-        [data-testid="stAppViewContainer"] > .main { background:transparent; }
         [data-testid="stHeader"] {
-            background:rgba(8,17,28,.78);
-            backdrop-filter:blur(14px);
-            border-bottom:1px solid rgba(145,166,192,.09);
+          background:rgba(7,11,18,.72);
+          border-bottom:1px solid rgba(255,255,255,.035);
+          backdrop-filter:blur(16px);
         }
-        .block-container { max-width:1540px; padding-top:1.25rem; padding-bottom:3.2rem; }
-        h1,h2,h3 { letter-spacing:-0.032em; }
-        h1 { font-weight:760; }
-        h2 { margin-top:1.3rem; font-size:1.35rem; }
-        h3 { color:#f3f8fd; font-size:1.02rem; }
+        .block-container { max-width:1480px; padding-top:1.15rem; padding-bottom:3.5rem; }
+        h1,h2,h3 { letter-spacing:-.035em; }
+        h1 { font-weight:800; }
+        h2 { font-size:1.28rem; margin-top:1.4rem; }
+        h3 { font-size:1rem; }
         p,li { line-height:1.58; }
-        a { color:#86bdf8 !important; text-underline-offset:3px; }
 
-        /* Navigation / application shell */
+        /* sidebar */
         [data-testid="stSidebar"] {
-            border-right:1px solid var(--eoc-border);
-            background:linear-gradient(180deg,rgba(10,19,30,.99),rgba(7,14,23,.99));
-            box-shadow:18px 0 48px rgba(0,0,0,.14);
+          background:linear-gradient(180deg,#0A1019 0%,#080D15 100%);
+          border-right:1px solid var(--hz-border);
+          box-shadow:16px 0 48px rgba(0,0,0,.18);
         }
-        [data-testid="stSidebar"] > div:first-child { padding-top:.45rem; }
-        [data-testid="stSidebarNav"] {
-            padding:.35rem .45rem .8rem;
-            border-bottom:1px solid rgba(145,166,192,.10);
-            margin-bottom:.55rem;
+        [data-testid="stSidebar"] > div:first-child { padding-top:.55rem; }
+        [data-testid="stSidebar"] [data-testid="stPageLink"] a {
+          border-radius:10px;
+          min-height:40px;
+          padding:.48rem .65rem;
+          border:1px solid transparent;
+          color:#C6D1DD !important;
+          font-size:.89rem;
+          font-weight:620;
+          transition:all .16s ease;
         }
-        [data-testid="stSidebarNav"]:before {
-            content:"EOC OPERATIONS";
-            display:block;
-            margin:.35rem .7rem .75rem;
-            color:#7e94aa;
-            font-size:.64rem;
-            font-weight:800;
-            letter-spacing:.16em;
+        [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
+          color:white !important;
+          background:rgba(94,167,255,.08);
+          border-color:rgba(94,167,255,.16);
+          transform:translateX(2px);
         }
-        [data-testid="stSidebarNav"] a {
-            min-height:42px;
-            display:flex;
-            align-items:center;
-            border-radius:11px;
-            margin:.14rem .18rem;
-            padding-left:.55rem;
-            border:1px solid transparent;
-            transition:background .18s ease,transform .18s ease,border-color .18s ease;
-        }
-        [data-testid="stSidebarNav"] a:hover {
-            background:rgba(105,174,252,.08);
-            border-color:rgba(105,174,252,.14);
-            transform:translateX(2px);
-        }
-        [data-testid="stSidebarNav"] a[aria-current="page"] {
-            background:linear-gradient(90deg,rgba(105,174,252,.15),rgba(79,209,197,.04));
-            border-color:rgba(105,174,252,.22);
-            box-shadow:inset 3px 0 0 #69aefc;
-        }
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
-            font-size:.72rem;
-            text-transform:uppercase;
-            letter-spacing:.12em;
-            color:#8297aa;
-            margin-top:1.1rem;
-        }
+        .hz-brand { display:flex; align-items:center; gap:.7rem; padding:.35rem .2rem .8rem; }
+        .hz-logo { width:34px; height:34px; display:grid; place-items:center; border-radius:10px; font-size:.72rem; font-weight:900; color:#07101A; background:linear-gradient(135deg,#75B9FF,#45D6C4); box-shadow:0 8px 24px rgba(94,167,255,.25); }
+        .hz-brand strong { display:block; color:#F3F7FB; font-size:.92rem; }
+        .hz-brand span { display:block; color:#74879B; font-size:.64rem; letter-spacing:.1em; margin-top:.05rem; }
+        .hz-nav-label { color:#60758A; font-size:.61rem; font-weight:800; letter-spacing:.15em; margin:.72rem .25rem .45rem; }
+        .hz-nav-separator { height:1px; background:var(--hz-border); margin:.7rem 0; }
+        .hz-runtime { display:flex; align-items:center; gap:.42rem; border-radius:9px; padding:.5rem .62rem; font-size:.64rem; font-weight:850; letter-spacing:.08em; }
+        .hz-runtime span { width:.45rem; height:.45rem; border-radius:50%; background:#F7C948; box-shadow:0 0 0 4px rgba(247,201,72,.08); }
+        .hz-runtime-offline { color:#F7D66B; background:rgba(247,201,72,.07); border:1px solid rgba(247,201,72,.20); }
+        .hz-runtime-note { color:#718397; font-size:.66rem; line-height:1.42; padding:.38rem .15rem 0; }
+        [data-testid="stSidebar"] [data-testid="stExpander"] { border:none; background:transparent; }
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary { color:#8294A8; font-size:.77rem; }
 
-        /* Website-like content surfaces */
-        [data-testid="stVerticalBlockBorderWrapper"] {
-            border-radius:var(--eoc-radius);
+        /* primary content */
+        .hz-hero {
+          position:relative;
+          overflow:hidden;
+          border:1px solid rgba(113,183,255,.18);
+          border-radius:22px;
+          padding:1.35rem 1.45rem 1.42rem;
+          background:linear-gradient(120deg,rgba(94,167,255,.14),rgba(255,255,255,.018) 48%,rgba(69,214,196,.045));
+          box-shadow:var(--hz-shadow);
+          margin-bottom:1rem;
         }
+        .hz-hero:after { content:""; position:absolute; width:250px; height:250px; border-radius:50%; right:-110px; top:-145px; border:1px solid rgba(113,183,255,.12); box-shadow:0 0 0 38px rgba(94,167,255,.025),0 0 0 78px rgba(69,214,196,.015); }
+        .hz-kicker { color:#7FA6CE; font-size:.64rem; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:.48rem; }
+        .hz-hero h1 { margin:0; font-size:clamp(1.72rem,2.4vw,2.42rem); max-width:1000px; position:relative; z-index:1; }
+        .hz-hero p { margin:.48rem 0 0; color:#A8B7C7; max-width:1050px; font-size:.93rem; position:relative; z-index:1; }
+        .hz-hero-meta { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.85rem; position:relative; z-index:1; }
+        .hz-chip { border:1px solid rgba(163,181,203,.16); border-radius:999px; padding:.26rem .58rem; color:#91A4B9; font-size:.62rem; font-weight:700; background:rgba(4,8,13,.22); }
+
         [data-testid="stMetric"] {
-            position:relative;
-            background:linear-gradient(145deg,rgba(255,255,255,.052),rgba(255,255,255,.015));
-            border:1px solid var(--eoc-border);
-            border-radius:15px;
-            padding:1.02rem 1.08rem;
-            box-shadow:0 10px 30px rgba(0,0,0,.13);
-            overflow:hidden;
-            transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+          background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.012));
+          border:1px solid var(--hz-border);
+          border-radius:16px;
+          padding:1rem 1.05rem;
+          box-shadow:0 10px 28px rgba(0,0,0,.14);
         }
-        [data-testid="stMetric"]:hover {
-            transform:translateY(-2px);
-            border-color:var(--eoc-border-strong);
-            box-shadow:0 18px 42px rgba(0,0,0,.19);
+        [data-testid="stMetricValue"] { font-weight:800; letter-spacing:-.045em; }
+        [data-testid="stMetricLabel"] { color:#91A3B5; font-size:.76rem; }
+        [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stVegaLiteChart"] {
+          border:1px solid var(--hz-border);
+          border-radius:16px;
+          overflow:hidden;
+          background:rgba(255,255,255,.012);
+          box-shadow:0 12px 34px rgba(0,0,0,.10);
+          max-width:100%;
         }
-        [data-testid="stMetric"]:before {
-            content:"";
-            position:absolute;
-            left:0; top:0; bottom:0; width:2px;
-            background:linear-gradient(180deg,var(--eoc-accent),var(--eoc-accent-2),transparent 92%);
-        }
-        [data-testid="stMetricValue"] { font-weight:760; letter-spacing:-.04em; }
-        [data-testid="stMetricLabel"] { color:#9fb1c2; font-size:.78rem; }
-
-        [data-testid="stDataFrame"] {
-            border:1px solid var(--eoc-border);
-            border-radius:15px;
-            overflow:hidden;
-            box-shadow:0 14px 36px rgba(0,0,0,.11);
-            background:rgba(255,255,255,.012);
-        }
-        [data-testid="stPlotlyChart"], [data-testid="stVegaLiteChart"] {
-            border:1px solid var(--eoc-border);
-            border-radius:15px;
-            padding:.45rem;
-            background:linear-gradient(145deg,rgba(255,255,255,.026),rgba(255,255,255,.008));
-            box-shadow:0 12px 32px rgba(0,0,0,.08);
-        }
-        iframe[title="streamlit_folium.st_folium"] {
-            border:1px solid var(--eoc-border) !important;
-            border-radius:17px !important;
-            box-shadow:0 18px 46px rgba(0,0,0,.16) !important;
-            overflow:hidden;
-        }
-
-        .stTabs [data-baseweb="tab-list"] {
-            gap:.42rem;
-            border-bottom:1px solid var(--eoc-border);
-            padding-bottom:.1rem;
-        }
-        .stTabs [data-baseweb="tab"] {
-            border-radius:10px 10px 0 0;
-            padding:.62rem .9rem;
-            transition:background .18s ease,color .18s ease;
-        }
-        .stTabs [aria-selected="true"] {
-            background:rgba(105,174,252,.09);
-            box-shadow:inset 0 -2px 0 #69aefc;
-        }
-
+        iframe[title="streamlit_folium.st_folium"] { border:1px solid var(--hz-border)!important; border-radius:18px!important; box-shadow:0 16px 42px rgba(0,0,0,.16)!important; overflow:hidden; max-width:100%!important; }
+        [data-testid="stAlert"] { border-radius:13px; border-width:1px; }
+        [data-testid="stExpander"] { border:1px solid var(--hz-border); border-radius:13px; background:rgba(255,255,255,.015); overflow:hidden; }
+        .stTabs [data-baseweb="tab-list"] { gap:.3rem; border-bottom:1px solid var(--hz-border); }
+        .stTabs [data-baseweb="tab"] { border-radius:9px 9px 0 0; padding:.55rem .78rem; }
+        .stTabs [aria-selected="true"] { background:rgba(94,167,255,.08); box-shadow:inset 0 -2px 0 var(--hz-accent); }
         .stButton > button, .stDownloadButton > button {
-            border-radius:11px;
-            font-weight:700;
-            min-height:2.68rem;
-            border:1px solid rgba(125,183,255,.27);
-            background:linear-gradient(180deg,rgba(105,174,252,.15),rgba(105,174,252,.055));
-            box-shadow:0 8px 20px rgba(0,0,0,.11);
-            transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease;
+          border-radius:11px;
+          min-height:2.6rem;
+          font-weight:700;
+          border:1px solid rgba(94,167,255,.28);
+          background:linear-gradient(180deg,rgba(94,167,255,.16),rgba(94,167,255,.06));
+          transition:all .16s ease;
         }
-        .stButton > button:hover, .stDownloadButton > button:hover {
-            transform:translateY(-1px);
-            border-color:rgba(125,183,255,.52);
-            background:linear-gradient(180deg,rgba(105,174,252,.20),rgba(105,174,252,.075));
-            box-shadow:0 13px 28px rgba(0,0,0,.18);
-        }
-        .stButton > button:active, .stDownloadButton > button:active { transform:translateY(0); }
+        .stButton > button:hover, .stDownloadButton > button:hover { transform:translateY(-1px); border-color:rgba(94,167,255,.58); box-shadow:0 12px 28px rgba(0,0,0,.18); }
+        [data-baseweb="select"] > div, [data-testid="stFileUploaderDropzone"], [data-testid="stNumberInput"] input, [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea { border-radius:11px!important; border-color:rgba(163,181,203,.20)!important; background:rgba(255,255,255,.025)!important; }
 
-        [data-baseweb="select"] > div,
-        [data-testid="stFileUploaderDropzone"],
-        [data-testid="stNumberInput"] input,
-        [data-testid="stTextInput"] input,
-        [data-testid="stTextArea"] textarea {
-            border-radius:11px !important;
-            border-color:rgba(145,166,192,.22) !important;
-            background:rgba(255,255,255,.025) !important;
-            transition:border-color .16s ease,box-shadow .16s ease;
-        }
-        [data-baseweb="select"] > div:focus-within,
-        [data-testid="stTextInput"] input:focus,
-        [data-testid="stNumberInput"] input:focus,
-        [data-testid="stTextArea"] textarea:focus {
-            border-color:rgba(105,174,252,.58) !important;
-            box-shadow:0 0 0 3px rgba(105,174,252,.08) !important;
-        }
-        [data-testid="stExpander"] {
-            border:1px solid var(--eoc-border);
-            border-radius:13px;
-            background:linear-gradient(145deg,rgba(255,255,255,.024),rgba(255,255,255,.008));
-            overflow:hidden;
-        }
-        [data-testid="stAlert"] {
-            border-radius:13px;
-            border-width:1px;
-            box-shadow:0 9px 26px rgba(0,0,0,.08);
-        }
+        .hz-mode { display:inline-flex; align-items:center; gap:.42rem; border-radius:999px; padding:.3rem .68rem; font-size:.67rem; font-weight:800; letter-spacing:.05em; }
+        .hz-dot { width:.45rem; height:.45rem; border-radius:50%; }
+        .hz-risk { display:inline-flex; color:#fff; border-radius:999px; padding:.27rem .66rem; font-size:.72rem; font-weight:800; letter-spacing:.035em; box-shadow:inset 0 0 0 1px rgba(255,255,255,.18); }
+        .hz-card { position:relative; min-height:120px; border:1px solid var(--hz-border); border-radius:16px; padding:1rem 1.05rem; background:linear-gradient(145deg,rgba(255,255,255,.034),rgba(255,255,255,.008)); }
+        .hz-card .label { color:#8093A7; font-size:.66rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+        .hz-card .value { color:#F3F7FB; font-size:1.08rem; font-weight:760; margin:.36rem 0; }
+        .hz-card .detail { color:#96A8BA; font-size:.79rem; line-height:1.45; }
+        .hz-disclaimer { color:#77899C; font-size:.72rem; border-top:1px solid var(--hz-border); margin-top:2rem; padding-top:.95rem; }
+        hr { border-color:var(--hz-border)!important; }
 
-        /* Product masthead */
-        .eoc-page-header {
-            position:relative;
-            background:
-                linear-gradient(116deg,rgba(55,122,204,.22),rgba(30,54,81,.09) 50%,rgba(79,209,197,.045)),
-                rgba(255,255,255,.014);
-            border:1px solid rgba(125,183,255,.21);
-            border-radius:20px;
-            padding:1.15rem 1.35rem 1.22rem;
-            margin-bottom:1rem;
-            overflow:hidden;
-            box-shadow:var(--eoc-shadow);
-        }
-        .eoc-page-header:before {
-            content:"";
-            position:absolute;
-            left:0; top:0; bottom:0; width:4px;
-            background:linear-gradient(180deg,#7db7ff,#4fd1c5);
-        }
-        .eoc-page-header:after {
-            content:"";
-            position:absolute;
-            width:260px; height:260px;
-            right:-118px; top:-152px;
-            border:1px solid rgba(125,183,255,.12);
-            border-radius:50%;
-            box-shadow:0 0 0 42px rgba(125,183,255,.025),0 0 0 86px rgba(79,209,197,.018);
-            pointer-events:none;
-        }
-        .eoc-topline {
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:1rem;
-            margin-bottom:.65rem;
-            position:relative;
-            z-index:1;
-        }
-        .eoc-brand {
-            display:flex;
-            align-items:center;
-            gap:.55rem;
-            color:#b9c8d8;
-            font-size:.69rem;
-            font-weight:800;
-            letter-spacing:.11em;
-            text-transform:uppercase;
-        }
-        .eoc-brand-mark {
-            width:24px;height:24px;border-radius:8px;
-            display:grid;place-items:center;
-            color:#07111b;font-size:.68rem;font-weight:900;
-            background:linear-gradient(135deg,#75b5ff,#52d4c7);
-            box-shadow:0 5px 16px rgba(82,166,255,.24);
-        }
-        .eoc-product-meta {
-            display:flex;gap:.38rem;flex-wrap:wrap;justify-content:flex-end;
-        }
-        .eoc-chip {
-            border:1px solid rgba(145,166,192,.18);
-            border-radius:999px;
-            padding:.23rem .52rem;
-            color:#8fa5bb;
-            font-size:.61rem;
-            font-weight:730;
-            letter-spacing:.045em;
-            background:rgba(4,10,17,.24);
-        }
-        .eoc-eyebrow {
-            display:flex;align-items:center;gap:.5rem;margin-bottom:.42rem;
-            color:#83a9cf;font-size:.66rem;font-weight:760;letter-spacing:.13em;text-transform:uppercase;
-        }
-        .eoc-eyebrow:before { content:"";width:22px;height:1px;background:linear-gradient(90deg,#69aefc,#4fd1c5); }
-        .eoc-page-header h1 { margin:0; font-size:clamp(1.65rem,2.1vw,2.15rem); position:relative; z-index:1; }
-        .eoc-page-header p { margin:.45rem 0 0; color:#a3b3c4; max-width:1120px; font-size:.94rem; position:relative; z-index:1; }
-
-        .eoc-mode {
-            display:inline-flex;align-items:center;gap:.4rem;border-radius:999px;padding:.30rem .68rem;
-            font-size:.69rem;font-weight:800;letter-spacing:.055em;backdrop-filter:blur(8px);
-        }
-        .eoc-mode-dot { width:.48rem;height:.48rem;border-radius:999px;display:inline-block;box-shadow:0 0 0 3px rgba(255,255,255,.025); }
-        .eoc-mode[data-mode="LIVE"] .eoc-mode-dot { animation:eocPulse 1.8s ease-out infinite; }
-        @keyframes eocPulse { 0%{box-shadow:0 0 0 0 rgba(53,208,127,.45)} 70%{box-shadow:0 0 0 7px rgba(53,208,127,0)} 100%{box-shadow:0 0 0 0 rgba(53,208,127,0)} }
-
-        .eoc-risk-badge {
-            display:inline-flex;align-items:center;color:white;border-radius:999px;padding:.27rem .68rem;
-            font-size:.74rem;font-weight:800;letter-spacing:.035em;
-            box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 6px 16px rgba(0,0,0,.16);
-        }
-        .eoc-panel {
-            border:1px solid var(--eoc-border);border-radius:var(--eoc-radius);padding:1.05rem;margin-bottom:.8rem;
-            background:linear-gradient(145deg,rgba(255,255,255,.029),rgba(255,255,255,.008));
-            box-shadow:0 12px 32px rgba(0,0,0,.10);
-        }
-        .eoc-source-card {
-            position:relative;border:1px solid var(--eoc-border);border-radius:16px;padding:1.05rem 1.08rem;
-            background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.009));
-            min-height:128px;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
-        }
-        .eoc-source-card:hover { transform:translateY(-2px);border-color:var(--eoc-border-strong);box-shadow:0 14px 34px rgba(0,0,0,.13); }
-        .eoc-source-card:after {
-            content:"";position:absolute;width:74px;height:74px;right:-28px;bottom:-31px;border-radius:50%;
-            background:radial-gradient(circle,rgba(105,174,252,.13),transparent 68%);
-        }
-        .eoc-source-card .title { font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#8fa2b6;margin-bottom:.36rem; }
-        .eoc-source-card .value { font-size:1.17rem;font-weight:750;margin-bottom:.36rem; }
-        .eoc-source-card .detail { font-size:.79rem;color:#9eafc0;line-height:1.43; }
-        .eoc-disclaimer { color:#8799ac;font-size:.74rem;border-top:1px solid var(--eoc-border);margin-top:1.9rem;padding-top:.95rem; }
-
-        hr { border-color:var(--eoc-border) !important; }
-        code { border-radius:8px !important; }
-
-        @media (prefers-reduced-motion:reduce) {
-            *,*:before,*:after { animation:none !important;transition:none !important;scroll-behavior:auto !important; }
-        }
+        /* tablet */
         @media (max-width:900px) {
-            .block-container { padding-left:1rem;padding-right:1rem; }
-            .eoc-page-header { padding:1rem;border-radius:15px; }
-            .eoc-page-header:after { opacity:.42; }
-            .eoc-product-meta { display:none; }
+          .block-container { padding-left:.85rem; padding-right:.85rem; padding-top:.85rem; }
+          [data-testid="stSidebar"] { width:min(84vw,330px)!important; min-width:min(84vw,330px)!important; }
+          .hz-hero { border-radius:16px; padding:1.05rem; }
+          .hz-hero:after { opacity:.3; }
+          .hz-card { min-height:0; }
         }
+
+        /* phone */
+        @media (max-width:720px) {
+          .block-container { padding:.62rem .62rem 4.5rem; }
+          [data-testid="stHorizontalBlock"] { flex-direction:column!important; gap:.65rem!important; }
+          [data-testid="stHorizontalBlock"] > [data-testid="column"] { width:100%!important; flex:1 1 100%!important; min-width:0!important; }
+          .hz-hero { margin-bottom:.72rem; border-radius:14px; padding:.92rem .9rem; box-shadow:0 10px 34px rgba(0,0,0,.22); }
+          .hz-hero h1 { font-size:1.55rem; line-height:1.13; }
+          .hz-hero p { font-size:.86rem; line-height:1.5; }
+          .hz-kicker { font-size:.58rem; margin-bottom:.38rem; }
+          .hz-hero-meta { margin-top:.68rem; gap:.3rem; }
+          .hz-chip { font-size:.58rem; padding:.22rem .46rem; }
+          h2 { font-size:1.14rem; margin-top:1.05rem; }
+          h3 { font-size:.96rem; }
+          p,li { line-height:1.52; }
+          [data-testid="stMetric"] { border-radius:13px; padding:.82rem .9rem; min-height:88px; }
+          [data-testid="stMetricValue"] { font-size:1.35rem; }
+          [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stVegaLiteChart"] { border-radius:13px; box-shadow:none; overflow-x:auto; }
+          iframe[title="streamlit_folium.st_folium"] { border-radius:13px!important; min-height:380px!important; height:56vh!important; box-shadow:none!important; }
+          .stTabs [data-baseweb="tab-list"] { overflow-x:auto; overflow-y:hidden; flex-wrap:nowrap; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+          .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display:none; }
+          .stTabs [data-baseweb="tab"] { flex:0 0 auto; white-space:nowrap; min-height:44px; }
+          .stButton > button, .stDownloadButton > button { min-height:46px; width:100%; font-size:.9rem; }
+          [data-testid="stPageLink"] a { min-height:46px!important; display:flex!important; align-items:center!important; }
+          [data-baseweb="select"] > div, [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input { min-height:46px; }
+          [data-testid="stFileUploaderDropzone"] { padding:.8rem!important; }
+          [data-testid="stAlert"] { font-size:.86rem; }
+          .hz-disclaimer { font-size:.68rem; margin-top:1.35rem; }
+        }
+
+        @media (max-width:480px) {
+          .hz-hero-meta .hz-chip:nth-child(n+3) { display:none; }
+          [data-testid="stSidebar"] { width:88vw!important; min-width:88vw!important; }
+          .hz-brand { padding-bottom:.65rem; }
+        }
+
+        @media (pointer:coarse) {
+          .stButton > button, .stDownloadButton > button, [data-testid="stPageLink"] a { min-height:48px!important; }
+          [data-baseweb="select"] > div { min-height:46px; }
+        }
+        @media (prefers-reduced-motion:reduce) { *,*:before,*:after { transition:none!important; animation:none!important; scroll-behavior:auto!important; } }
         </style>
         """,
         unsafe_allow_html=True,
     )
+    _render_navigation()
 
 
 def render_page_header(title: str, description: str) -> None:
     st.markdown(
-        "<div class='eoc-page-header'>"
-        "<div class='eoc-topline'>"
-        "<div class='eoc-brand'><span class='eoc-brand-mark'>HZ</span><span>Hazard Red-Zone Command Platform</span></div>"
-        "<div class='eoc-product-meta'><span class='eoc-chip'>SIH26191</span><span class='eoc-chip'>Decision Support</span><span class='eoc-chip'>Multi-Hazard</span></div>"
-        "</div>"
-        "<div class='eoc-eyebrow'>Emergency Operations Intelligence</div>"
-        f"<h1>{html.escape(title)}</h1><p>{html.escape(description)}</p></div>",
+        "<section class='hz-hero'>"
+        "<div class='hz-kicker'>Hazard-based decision support</div>"
+        f"<h1>{html.escape(title)}</h1>"
+        f"<p>{html.escape(description)}</p>"
+        "<div class='hz-hero-meta'><span class='hz-chip'>SIH26191</span><span class='hz-chip'>Explainable risk</span><span class='hz-chip'>Capacity-aware relocation</span></div>"
+        "</section>",
         unsafe_allow_html=True,
     )
 
@@ -375,18 +284,17 @@ def render_page_header(title: str, description: str) -> None:
 def render_data_mode_indicator(mode: str = "DEMO") -> None:
     mode = str(mode).upper()
     label = {"LIVE": "LIVE DATA", "CACHED": "CACHED DATA", "DEMO": "DEMONSTRATION DATA"}.get(mode, mode)
-    foreground, background = MODE_COLORS.get(mode, ("#98a2b3", "rgba(152,162,179,.10)"))
+    foreground, background = MODE_COLORS.get(mode, ("#98A2B3", "rgba(152,162,179,.10)"))
     st.markdown(
-        f"<span class='eoc-mode' data-mode='{html.escape(mode)}' style='color:{foreground};background:{background};border:1px solid {foreground}55'>"
-        f"<span class='eoc-mode-dot' style='background:{foreground}'></span>{html.escape(label)}</span>",
+        f"<span class='hz-mode' style='color:{foreground};background:{background};border:1px solid {foreground}55'><span class='hz-dot' style='background:{foreground}'></span>{html.escape(label)}</span>",
         unsafe_allow_html=True,
     )
 
 
 def render_source_card(title: str, value: str, detail: str) -> None:
     st.markdown(
-        "<div class='eoc-source-card'>"
-        f"<div class='title'>{html.escape(str(title))}</div>"
+        "<div class='hz-card'>"
+        f"<div class='label'>{html.escape(str(title))}</div>"
         f"<div class='value'>{html.escape(str(value))}</div>"
         f"<div class='detail'>{html.escape(str(detail))}</div>"
         "</div>",
@@ -396,19 +304,16 @@ def render_source_card(title: str, value: str, detail: str) -> None:
 
 def render_demo_scope_controls(prefix: str = "demo") -> tuple[str, str]:
     with st.sidebar:
-        st.subheader("Demo Scenario")
+        st.markdown("### Scenario")
         city = st.selectbox("Geography", DEMO_CITY_OPTIONS, key=f"{prefix}_city")
         label = st.selectbox("Hazard profile", list(HAZARD_PROFILE_OPTIONS), key=f"{prefix}_hazard")
-        st.caption(
-            "Puri, Guwahati and Chennai use real geography with synthetic operational scenario values. "
-            "Hazard-profile weights are transparent prototype assumptions, not official standards."
-        )
+        st.caption("Demo geographies use synthetic operational scenario values unless an authoritative source is explicitly activated.")
     return city, HAZARD_PROFILE_OPTIONS[label]
 
 
 def render_upload_controls(prefix: str = "upload"):
     with st.sidebar.expander("Custom CSV input", expanded=False):
-        st.caption("Use the frozen required columns. Missing values are not fabricated.")
+        st.caption("Required fields are validated; missing values are not fabricated.")
         habitations = st.file_uploader("Habitation CSV", type=["csv"], key=f"{prefix}_habitations")
         shelters = st.file_uploader("Shelter CSV", type=["csv"], key=f"{prefix}_shelters")
     return habitations, shelters
@@ -416,11 +321,8 @@ def render_upload_controls(prefix: str = "upload"):
 
 def render_risk_badge(level: str) -> None:
     level = str(level).upper()
-    color = RISK_COLORS.get(level, "#6c757d")
-    st.markdown(
-        f"<span class='eoc-risk-badge' style='background:{color}'>{html.escape(level)}</span>",
-        unsafe_allow_html=True,
-    )
+    color = RISK_COLORS.get(level, "#6C757D")
+    st.markdown(f"<span class='hz-risk' style='background:{color}'>{html.escape(level)}</span>", unsafe_allow_html=True)
 
 
 def render_kpi_strip(metrics: list[tuple[str, object, str | None]]) -> None:
@@ -435,6 +337,6 @@ def render_empty_state(message: str) -> None:
 
 def render_disclaimer() -> None:
     st.markdown(
-        "<div class='eoc-disclaimer'>Decision-support prototype only. Final evacuation, relocation and emergency orders remain with authorized disaster-management officials. Multi-city operational values and hazard footprints bundled with the app are DEMO scenario data unless an authoritative source is explicitly identified.</div>",
+        "<div class='hz-disclaimer'>Decision-support system only. Evacuation, relocation and emergency orders remain with authorized disaster-management officials. Bundled operational values are demonstration data unless an authoritative source is explicitly identified.</div>",
         unsafe_allow_html=True,
     )

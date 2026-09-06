@@ -17,6 +17,7 @@ from src.gdacs_context import fetch_gdacs_events
 from src.imd_context import fetch_imd_context
 from src.live_alerts import fetch_disaster_alerts
 from src.open_meteo_context import fetch_weather_at_location
+from src.runtime_mode import offline_mode
 from src.spatial_analysis import haversine_km
 
 
@@ -61,6 +62,20 @@ def _resolve_location(city: str, latitude: float | None, longitude: float | None
     raise ValueError("latitude and longitude are required for locations outside the bundled reference cities")
 
 
+def _offline_sources() -> dict[str, dict]:
+    """Return empty, explicitly offline source payloads without network activity."""
+    base = {"mode": "DEMO", "stale": False, "access_status": "OFFLINE"}
+    return {
+        "weather": {**base, "source": "Open-Meteo Forecast API", "current": {}},
+        "air_quality": {**base, "source": "Open-Meteo Air Quality API", "current": {}},
+        "usgs": {**base, "source": "USGS FDSN Earthquake Catalog", "events": []},
+        "gdacs": {**base, "source": "Global Disaster Alert and Coordination System (GDACS)", "events": []},
+        "eonet": {**base, "source": "NASA Earth Observatory Natural Event Tracker (EONET)", "events": []},
+        "imd": {**base, "source": "India Meteorological Department (IMD)", "warnings": [], "rainfall": []},
+        "sachet": {**base, "source": "NDMA SACHET", "alerts": []},
+    }
+
+
 def fetch_operations_snapshot(
     city: str,
     *,
@@ -73,56 +88,61 @@ def fetch_operations_snapshot(
     """Fetch an EOC-friendly real-time/context snapshot.
 
     Calls to independent external sources are executed concurrently to avoid
-    serial network latency. The result is situational context only: nothing
-    returned by this function is automatically mapped into H/E/V/A or the
-    baseline risk score.
+    serial network latency. When ``SIH_OFFLINE_MODE`` is enabled, no external
+    calls are attempted and every source is returned with ``OFFLINE`` access
+    status. The result remains situational context only: nothing returned by
+    this function is automatically mapped into H/E/V/A or the baseline score.
     """
     latitude, longitude = _resolve_location(city, latitude, longitude)
+    is_offline = offline_mode()
 
-    calls: dict[str, tuple[str, Callable[[], dict]]] = {
-        "weather": (
-            "Open-Meteo Forecast API",
-            lambda: fetch_weather_at_location(city, latitude, longitude),
-        ),
-        "air_quality": (
-            "Open-Meteo Air Quality API",
-            lambda: fetch_air_quality_at_location(city, latitude, longitude),
-        ),
-        "usgs": (
-            "USGS FDSN Earthquake Catalog",
-            lambda: fetch_recent_earthquakes_at_location(
-                city,
-                latitude,
-                longitude,
-                days=days,
-                radius_km=radius_km,
-                min_magnitude=min_magnitude,
+    if is_offline:
+        sources = _offline_sources()
+    else:
+        calls: dict[str, tuple[str, Callable[[], dict]]] = {
+            "weather": (
+                "Open-Meteo Forecast API",
+                lambda: fetch_weather_at_location(city, latitude, longitude),
             ),
-        ),
-        "gdacs": (
-            "Global Disaster Alert and Coordination System (GDACS)",
-            lambda: fetch_gdacs_events(days=days),
-        ),
-        "eonet": (
-            "NASA Earth Observatory Natural Event Tracker (EONET)",
-            lambda: fetch_eonet_events(days=days, limit=100),
-        ),
-        "imd": (
-            "India Meteorological Department (IMD)",
-            lambda: fetch_imd_context(city),
-        ),
-        "sachet": ("NDMA SACHET", fetch_disaster_alerts),
-    }
-
-    sources: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=len(calls), thread_name_prefix="live-source") as executor:
-        future_map = {
-            executor.submit(_safe_call, label, fn): key
-            for key, (label, fn) in calls.items()
+            "air_quality": (
+                "Open-Meteo Air Quality API",
+                lambda: fetch_air_quality_at_location(city, latitude, longitude),
+            ),
+            "usgs": (
+                "USGS FDSN Earthquake Catalog",
+                lambda: fetch_recent_earthquakes_at_location(
+                    city,
+                    latitude,
+                    longitude,
+                    days=days,
+                    radius_km=radius_km,
+                    min_magnitude=min_magnitude,
+                ),
+            ),
+            "gdacs": (
+                "Global Disaster Alert and Coordination System (GDACS)",
+                lambda: fetch_gdacs_events(days=days),
+            ),
+            "eonet": (
+                "NASA Earth Observatory Natural Event Tracker (EONET)",
+                lambda: fetch_eonet_events(days=days, limit=100),
+            ),
+            "imd": (
+                "India Meteorological Department (IMD)",
+                lambda: fetch_imd_context(city),
+            ),
+            "sachet": ("NDMA SACHET", fetch_disaster_alerts),
         }
-        for future in as_completed(future_map):
-            key = future_map[future]
-            sources[key] = future.result()
+
+        sources: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=len(calls), thread_name_prefix="live-source") as executor:
+            future_map = {
+                executor.submit(_safe_call, label, fn): key
+                for key, (label, fn) in calls.items()
+            }
+            for future in as_completed(future_map):
+                key = future_map[future]
+                sources[key] = future.result()
 
     weather = sources["weather"]
     air = sources["air_quality"]
@@ -206,4 +226,5 @@ def fetch_operations_snapshot(
         "events": event_register,
         "scope": {"days": int(days), "radius_km": int(radius_km), "min_magnitude": float(min_magnitude)},
         "analytical_effect": "CONTEXT_ONLY",
+        "offline": is_offline,
     }

@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from src.live_data import fetch_json_with_cache
+from src.runtime_mode import offline_mode
 from src.spatial_analysis import haversine_km
 
 
@@ -173,12 +174,13 @@ def estimate_route(
 
     Order of preference:
     1. locally cached OpenStreetMap GraphML road network;
-    2. OSRM road route when `allow_live_osrm=True`, with disk-cache reuse;
+    2. OSRM road route when connected and `allow_live_osrm=True`;
     3. explicit straight-line haversine fallback.
 
-    No traffic/congestion claim is made. Routing never bypasses shelter safety or
-    capacity selection; this function only computes the path to the already
-    selected shelter.
+    Explicit offline mode always suppresses OSRM network access while preserving
+    local GraphML routing. No traffic/congestion claim is made. Routing never
+    bypasses shelter safety or capacity selection; this function only computes
+    the path to the already selected shelter.
     """
     configured_path = graphml_path or os.getenv("SIH_ROAD_GRAPHML")
     graph_error = None
@@ -190,7 +192,7 @@ def estimate_route(
             except Exception as exc:
                 graph_error = str(exc)
 
-    if allow_live_osrm:
+    if allow_live_osrm and not offline_mode():
         try:
             return _osrm_route(origin, destination)
         except Exception as exc:
@@ -198,6 +200,12 @@ def estimate_route(
             if graph_error:
                 note += f" Cached graph: {graph_error}"
             return _fallback_route(origin, destination, note=note)
+
+    if offline_mode() and allow_live_osrm:
+        note = "Offline field mode disables live OSRM routing; using straight-line fallback."
+        if graph_error:
+            note += f" Cached graph: {graph_error}"
+        return _fallback_route(origin, destination, note=note)
 
     note = "No cached road graph available."
     if graph_error:

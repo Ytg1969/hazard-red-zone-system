@@ -3,7 +3,8 @@
 Session uploads take precedence. When configured HTTPS feeds are available,
 server-side caching can bootstrap new browser sessions without repeated uploads.
 A production deployment can explicitly disable synthetic demo fallbacks by
-setting SIH_REQUIRE_OPERATIONAL_DATA=true.
+setting SIH_REQUIRE_OPERATIONAL_DATA=true. Explicit offline field mode never
+attempts configured remote feeds; session/local uploads remain usable.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import streamlit as st
 from src.operational_hazards import configured_hazard_source, fetch_configured_hazard
 from src.operational_sources import configured_operational_urls, fetch_operational_habitations, fetch_operational_shelters
 from src.operational_workspace import restore_workspace, serialize_workspace
+from src.runtime_mode import offline_mode
 
 
 REQUIRE_OPERATIONAL_ENV = "SIH_REQUIRE_OPERATIONAL_DATA"
@@ -28,7 +30,7 @@ def _stop_missing_operational_data(message: str) -> None:
     st.error(message)
     st.info(
         "Production mode is configured to reject bundled DEMO habitations/shelters. "
-        "Configure SIH_HABITATION_CSV_URL and SIH_SHELTER_CSV_URL, or activate a validated upload from Operational Data."
+        "Configure validated local/session operational data, or disable strict operational mode while offline."
     )
     st.page_link("pages/9_Operational_Data.py", label="Open Operational Data", use_container_width=True)
     st.stop()
@@ -56,15 +58,20 @@ def _cached_configured_hazard(hazard_url: str) -> dict[str, Any]:
 def resolve_operational_workspace(*, auto_configured: bool = True, enforce_required: bool = True) -> dict[str, Any] | None:
     """Return validated operational habitation/site data for the current session.
 
-    If SIH_REQUIRE_OPERATIONAL_DATA=true and enforce_required is left enabled,
-    the function stops the Streamlit page instead of permitting a DEMO fallback.
-    The Operational Data management page can set enforce_required=False so an
-    operator still has a recovery/upload path when a configured feed is down.
+    Session/local uploads always take precedence. In explicit offline mode,
+    configured HTTPS feeds are not contacted. If strict operational data is
+    required and no session workspace exists, the page stops rather than
+    silently falling back to DEMO data.
     """
     payload = st.session_state.get("operational_workspace")
     if payload:
         habitations, shelters = restore_workspace(payload)
         return {"payload": payload, "habitations": habitations, "shelters": shelters, "origin": "session"}
+
+    if offline_mode():
+        if enforce_required and operational_data_required():
+            _stop_missing_operational_data("Offline field mode is active and no validated local/session operational workspace is loaded.")
+        return None
 
     if not auto_configured:
         if enforce_required and operational_data_required():
@@ -105,7 +112,7 @@ def resolve_operational_hazard(*, auto_configured: bool = True) -> dict[str, Any
             "origin": "session",
         }
 
-    if not auto_configured:
+    if offline_mode() or not auto_configured:
         return None
 
     configured = configured_hazard_source()
