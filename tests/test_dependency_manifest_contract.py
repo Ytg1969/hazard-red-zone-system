@@ -3,6 +3,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = ROOT / "requirements.txt"
+ROUTING_REQUIREMENTS = ROOT / "requirements-routing.txt"
+DEV_REQUIREMENTS = ROOT / "requirements-dev.txt"
 ENVIRONMENT = ROOT / "environment.yml"
 
 EXPECTED_DIRECT = {
@@ -33,6 +35,14 @@ def _pip_pins() -> dict[str, str]:
     return pins
 
 
+def _active_lines(path: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
 def test_production_requirements_are_exactly_pinned():
     assert _pip_pins() == EXPECTED_DIRECT
 
@@ -53,3 +63,11 @@ def test_conda_manifest_matches_direct_production_versions():
 def test_no_unpinned_direct_dependencies_remain():
     requirements_text = REQUIREMENTS.read_text(encoding="utf-8")
     assert all("==" in line for line in requirements_text.splitlines() if line.strip() and not line.startswith("#"))
+
+
+def test_routing_profile_is_only_a_production_alias():
+    assert _active_lines(ROUTING_REQUIREMENTS) == ["-r requirements.txt"]
+
+
+def test_dev_profile_uses_production_pins_and_pinned_pytest():
+    assert _active_lines(DEV_REQUIREMENTS) == ["-r requirements.txt", "pytest==9.1.1"]
