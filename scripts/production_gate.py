@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.live_alerts import fetch_disaster_alerts  # noqa: E402
+from src.live_operations import fetch_operations_snapshot  # noqa: E402
 from src.ogc_sources import parse_wms_capabilities  # noqa: E402
 from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters, load_demo_data, load_demo_hazards  # noqa: E402
 from src.provenance import default_provenance_register  # noqa: E402
@@ -98,6 +99,29 @@ def run_gate() -> dict:
     result["checks"]["sachet_unconfigured_is_empty"] = {
         "pass": sachet.get("access_status") == "UNCONFIGURED" and sachet.get("alerts") == [],
         "access_status": sachet.get("access_status"),
+    }
+
+    # Explicit field/offline mode must return immediately without depending on the network.
+    previous_offline = os.environ.get("SIH_OFFLINE_MODE")
+    os.environ["SIH_OFFLINE_MODE"] = "true"
+    try:
+        offline_snapshot = fetch_operations_snapshot("Puri", days=7, radius_km=500, min_magnitude=2.5)
+    finally:
+        if previous_offline is None:
+            os.environ.pop("SIH_OFFLINE_MODE", None)
+        else:
+            os.environ["SIH_OFFLINE_MODE"] = previous_offline
+
+    offline_health = offline_snapshot.get("source_health", [])
+    result["checks"]["explicit_offline_runtime"] = {
+        "pass": (
+            offline_snapshot.get("offline") is True
+            and offline_snapshot.get("events") == []
+            and len(offline_health) == 7
+            and all(row.get("access_status") == "OFFLINE" for row in offline_health)
+        ),
+        "sources": len(offline_health),
+        "access_statuses": sorted({str(row.get("access_status")) for row in offline_health}),
     }
 
     result["production_ready_offline"] = all(check["pass"] for check in result["checks"].values())
