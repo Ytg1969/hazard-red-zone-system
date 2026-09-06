@@ -51,9 +51,9 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ env.ROAD_SCOPE }}" -eq "all-demo-cities") {
-            python scripts/cache_road_network.py --demo-cities
+            python scripts/cache_road_network.py --demo-cities --attempts 3 --request-timeout 120 --retry-delay 15
           } else {
-            python scripts/cache_road_network.py "Puri, Odisha, India"
+            python scripts/cache_road_network.py "Puri, Odisha, India" --attempts 3 --request-timeout 120 --retry-delay 15
           }
 
       - name: Run strict offline field preflight
