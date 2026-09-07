@@ -9,19 +9,23 @@ from src.pipeline import calculate_summary, enrich_habitations, enrich_shelters,
 from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import (
     inject_global_css,
+    render_command_card,
+    render_context_bar,
     render_data_mode_indicator,
+    render_decision_gate,
     render_demo_scope_controls,
     render_disclaimer,
     render_kpi_strip,
     render_page_header,
     render_risk_badge,
+    render_section_header,
 )
 
-st.set_page_config(page_title="Incident Briefing", page_icon="BR", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="Incident Briefing", page_icon="BR", layout="wide", initial_sidebar_state="collapsed")
 inject_global_css()
 render_page_header(
     "Incident Briefing",
-    "A compact administrative handoff built from the active analytical scope, with assumptions and provenance kept visible.",
+    "A concise administrative handoff with the incident picture, unresolved constraints, provenance and exportable priority register.",
 )
 
 resolved = None
@@ -34,7 +38,7 @@ if resolved:
     payload = resolved["payload"]
     habitations_raw = resolved["habitations"]
     shelters_raw = resolved["shelters"]
-    label = payload.get("label", "Operational dataset")
+    label = str(payload.get("label", "Operational dataset"))
     mode = str(payload.get("habitation_mode", "UNVERIFIED")).upper()
     with st.sidebar:
         st.markdown("### Brief scope")
@@ -45,12 +49,7 @@ if resolved:
             index=0,
             format_func=lambda value: "Stored / calibrated GIS" if value == "stored" else value.title(),
         )
-    if mode in {"LIVE", "CACHED", "DEMO"}:
-        render_data_mode_indicator(mode)
-    else:
-        st.warning("Workspace provenance is unverified.")
 else:
-    render_data_mode_indicator("DEMO")
     city, hazard_profile = render_demo_scope_controls("brief")
     habitations_raw, shelters_raw = load_demo_data(city)
     label = city
@@ -72,11 +71,23 @@ except Exception as exc:
 
 priority = habitations.sort_values("risk_score", ascending=False)
 top = priority.iloc[0]
+focus_name = st.session_state.get("focus_location")
+focus_rows = priority[priority["name"].astype(str) == str(focus_name)] if focus_name else priority.iloc[0:0]
+focus = focus_rows.iloc[0] if not focus_rows.empty else top
 available_capacity = int(summary["available_shelter_capacity"])
 immediate = int(summary["immediate_relocation_population"])
 capacity_gap = max(0, immediate - available_capacity)
-
 generated_at = datetime.now(timezone.utc).isoformat()
+
+render_context_bar(
+    label,
+    f"{hazard_profile.replace('_', ' ').title()} · {mode}",
+    "ADMINISTRATIVE HANDOFF",
+)
+if mode in {"LIVE", "CACHED", "DEMO"}:
+    render_data_mode_indicator(mode)
+else:
+    st.warning("Workspace provenance is unverified.")
 
 render_kpi_strip([
     ("People at risk", f"{int(summary['population_at_risk']):,}", "HIGH + CRITICAL"),
@@ -86,36 +97,48 @@ render_kpi_strip([
     ("Capacity gap", f"{capacity_gap:,}", "Uncovered demand" if capacity_gap else "No current gap"),
 ])
 
-left, right = st.columns([1.55, 1], gap="large")
+render_section_header(
+    "Situation handoff",
+    "The brief surfaces the highest analytical priority and any capacity issue before export.",
+    "REVIEW BEFORE USE",
+)
+left, right = st.columns([1.7, 1], gap="large")
 with left:
-    st.markdown("## Situation summary")
-    st.markdown(f"### {top['name']}")
-    render_risk_badge(top["risk_level"])
-    st.write(
-        f"Highest analytical risk is **{float(top['risk_score']):.1f}/100** for "
-        f"**{int(top['population']):,} people**."
+    render_command_card(
+        "Highest analytical priority",
+        str(top["name"]),
+        f"{float(top['risk_score']):.1f}/100 risk · {int(top['population']):,} people · {top['relocation_priority']} relocation priority",
+        severity=str(top["risk_level"]),
     )
-    st.write(f"**Primary drivers:** {top['risk_drivers']}")
-    st.write(f"**Relocation priority:** {top['relocation_priority']}")
-
-    st.markdown("### Priority register")
-    cols = [c for c in ["name", "population", "risk_score", "risk_level", "relocation_priority"] if c in priority.columns]
-    st.dataframe(priority[cols].head(8), width="stretch", hide_index=True)
+    render_risk_badge(top["risk_level"])
+    st.write(f"**Primary drivers** · {top['risk_drivers']}")
+    if str(focus["name"]) != str(top["name"]):
+        st.caption(f"Current operator focus: {focus['name']} · {float(focus['risk_score']):.1f}/100")
 
 with right:
-    st.markdown("## Administrative status")
-    if capacity_gap:
-        st.error(f"Verified available capacity is short by **{capacity_gap:,} places** for immediate relocation demand.")
-    else:
-        st.success("Current verified available capacity covers immediate relocation demand in this analytical scope.")
-
-    st.markdown("### Required review")
-    st.markdown(
-        "- Confirm active source mode and geography.\n"
-        "- Validate highest-risk locations and risk evidence.\n"
-        "- Confirm shelter safety, capacity and route provenance.\n"
-        "- Treat this output as decision support for authorized officials."
+    render_decision_gate(
+        "Capacity status",
+        f"{available_capacity:,} available against {immediate:,} immediate demand",
+        "danger" if capacity_gap else "ok",
     )
+    render_decision_gate(
+        "Authority boundary",
+        "This briefing is decision support and is not an automated evacuation order.",
+        "ok",
+    )
+    render_decision_gate(
+        "Source review",
+        f"Active data mode: {mode}. Confirm provenance before operational use.",
+        "warn" if mode not in {"LIVE", "CACHED"} else "ok",
+    )
+
+render_section_header(
+    "Priority register",
+    "Keep the handoff compact; the detailed explanation and route evidence remain in their dedicated workspaces.",
+    "TOP 8",
+)
+cols = [c for c in ["name", "population", "risk_score", "risk_level", "relocation_priority"] if c in priority.columns]
+st.dataframe(priority[cols].head(8), width="stretch", hide_index=True)
 
 brief = {
     "generated_at_utc": generated_at,
@@ -146,7 +169,11 @@ brief = {
     },
 }
 
-st.markdown("## Export")
+render_section_header(
+    "Export handoff",
+    "Use machine-readable JSON for system handoff or CSV for a compact priority register.",
+    "EXPORT",
+)
 export_left, export_right = st.columns(2, gap="large")
 with export_left:
     st.download_button(
