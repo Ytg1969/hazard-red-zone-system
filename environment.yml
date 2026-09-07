@@ -18,6 +18,7 @@ dependencies:
       - plotly==6.9.0
       - networkx==3.6.1
       - osmnx==2.1.1
+      - scikit-learn==1.7.1
       - reportlab==5.0.1
       - certifi==2026.7.22
       - openpyxl==3.1.5
