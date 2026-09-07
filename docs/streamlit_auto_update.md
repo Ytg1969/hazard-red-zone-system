@@ -13,7 +13,9 @@ The public SIH26191 demonstration deployment is expected to use Streamlit Commun
 
 Streamlit Community Cloud monitors the connected GitHub repository. When a commit reaches the configured `main` branch, Community Cloud automatically refreshes the deployed application. Changes to Python/application files are normally reflected directly; dependency-file changes can trigger a fuller rebuild/redeploy.
 
-No separate GitHub Actions deployment webhook is required for this hosting model. The repository's GitHub Actions workflows are release gates and smoke checks, not the hosting transport.
+This repository contains both `environment.yml` and `requirements.txt` at the root. Community Cloud prioritizes `environment.yml` ahead of `requirements.txt`, so `environment.yml` is the selected deployment dependency manifest. Keep both manifests aligned, but touch/update `environment.yml` whenever a Cloud dependency rebuild must be forced.
+
+No separate GitHub Actions deployment webhook is required for this hosting model. The repository's GitHub Actions workflows are release gates and smoke checks, not the hosting transport. After a successful Deployment Smoke on `main`, the Streamlit Site Verification workflow checks the actual public app endpoint and browser-smokes the core decision pages for fatal Streamlit/import errors.
 
 ## Project release rule
 
@@ -24,6 +26,10 @@ The current deployment coordinates must not be changed casually. If the reposito
 ## What this repository can and cannot verify
 
 This repository can enforce the intended deployment coordinates and keep `main` release-gated. It cannot inspect a user's Streamlit Community Cloud account settings from GitHub alone.
+
+The public app URL used by automated verification is:
+
+`https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app`
 
 After first deployment, verify once in Streamlit Community Cloud that the app is bound to:
 
