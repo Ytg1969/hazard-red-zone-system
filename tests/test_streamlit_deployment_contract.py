@@ -52,6 +52,17 @@ def test_post_merge_streamlit_verifier_is_main_only_and_browser_aware():
     assert "page.url" in workflow
 
 
+def test_public_verifier_covers_hazard_command_2_pages():
+    workflow = VERIFIER.read_text(encoding="utf-8")
+    required_routes = [
+        '("briefing", base + "/Briefing")',
+        '("evidence-center", base + "/Evidence_Center")',
+        '("system-boundaries", base + "/About_System")',
+    ]
+    for route in required_routes:
+        assert route in workflow
+
+
 def test_auto_update_contract_does_not_weaken_analytical_safety():
     text = CONTRACT.read_text(encoding="utf-8")
     assert "LIVE external context remains additive unless calibrated" in text
