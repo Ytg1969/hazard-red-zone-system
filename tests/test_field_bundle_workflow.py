@@ -88,6 +88,12 @@ def test_windows_bundle_installer_creates_isolated_offline_environment():
         assert fragment in text, f"offline installer is missing required behavior: {fragment}"
 
 
+def test_windows_installer_delimits_exit_code_before_colon():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert 'exit code ${LASTEXITCODE}:' in text
+    assert 'exit code $LASTEXITCODE:' not in text
+
+
 def test_windows_bundle_launcher_refuses_unvalidated_environment():
     text = LAUNCHER.read_text(encoding="utf-8")
     required_fragments = [
