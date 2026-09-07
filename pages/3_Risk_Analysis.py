@@ -9,12 +9,16 @@ from src.risk_engine import DEFAULT_WEIGHTS, calculate_risk
 from src.streamlit_workspace import resolve_operational_hazard, resolve_operational_workspace
 from src.ui_theme import (
     inject_global_css,
+    render_command_card,
+    render_context_bar,
     render_data_mode_indicator,
+    render_decision_gate,
     render_demo_scope_controls,
     render_disclaimer,
     render_kpi_strip,
     render_page_header,
     render_risk_badge,
+    render_section_header,
     render_source_card,
 )
 
@@ -22,7 +26,7 @@ st.set_page_config(page_title="Risk Intelligence", layout="wide", initial_sideba
 inject_global_css()
 render_page_header(
     "Risk Intelligence",
-    "Understand exactly why a location is risky, which factor contributes most, and what evidence supports the score.",
+    "Explain the selected score in risk points, identify the dominant driver and inspect the evidence behind it.",
 )
 
 resolved = None
@@ -35,19 +39,18 @@ operational = bool(resolved)
 hazard_source = None
 if operational:
     workspace = resolved["payload"]
-    mode = workspace.get("habitation_mode", "UNVERIFIED")
-    if mode in {"LIVE", "CACHED", "DEMO"}:
-        render_data_mode_indicator(mode)
-    else:
-        st.warning("Operational workspace provenance is UNVERIFIED.")
-    area_label = workspace.get("label", "Operational area")
+    mode = str(workspace.get("habitation_mode", "UNVERIFIED")).upper()
+    area_label = str(workspace.get("label", "Operational area"))
     habitations_raw = resolved["habitations"]
-    hazard_profile = st.sidebar.selectbox(
-        "Analytical hazard profile",
-        ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
-        index=0,
-        format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title(),
-    )
+    with st.sidebar:
+        st.markdown("### Analytical context")
+        hazard_profile = st.selectbox(
+            "Analytical hazard profile",
+            ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+            index=0,
+            format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title(),
+        )
+        st.success(f"Workspace: {area_label}")
     hazard_data = None
     if hazard_profile == "stored":
         try:
@@ -57,9 +60,8 @@ if operational:
         except Exception as exc:
             st.error(f"Configured operational hazard layer could not be loaded: {exc}")
             st.stop()
-    st.sidebar.success(f"Operational workspace: {area_label}")
 else:
-    render_data_mode_indicator("DEMO")
+    mode = "DEMO"
     city, hazard_profile = render_demo_scope_controls("risk")
     area_label = city
     habitations_raw, _ = load_demo_data(city)
@@ -78,8 +80,14 @@ except Exception as exc:
     st.stop()
 
 ordered = habitations.sort_values("risk_score", ascending=False)
-selected_name = st.selectbox("Inspect location", ordered["name"].tolist())
-habitation = habitations[habitations["name"] == selected_name].iloc[0].to_dict()
+priority_names = ordered["name"].astype(str).tolist()
+remembered = st.session_state.get("focus_location")
+default_index = priority_names.index(remembered) if remembered in priority_names else 0
+with st.sidebar:
+    st.markdown("### Focus")
+    selected_name = st.selectbox("Inspect location", priority_names, index=default_index, key="risk_focus")
+st.session_state["focus_location"] = selected_name
+habitation = habitations[habitations["name"].astype(str) == str(selected_name)].iloc[0].to_dict()
 risk = calculate_risk(habitation)
 
 labels = {
@@ -101,7 +109,16 @@ contribution_df = pd.DataFrame(rows).sort_values("Contribution", ascending=False
 top_driver_key = max(risk["components"], key=lambda key: risk["contributions"][key])
 top_driver = labels[top_driver_key]
 
-st.caption(f"{area_label} · {hazard_profile.replace('_', ' ').title()} · Risk = 0.35H + 0.25E + 0.25V + 0.15A")
+render_context_bar(
+    str(area_label),
+    f"{hazard_profile.replace('_', ' ').title()} · {mode}",
+    "Risk = 0.35H + 0.25E + 0.25V + 0.15A",
+)
+if mode in {"LIVE", "CACHED", "DEMO"}:
+    render_data_mode_indicator(mode)
+else:
+    st.warning("Operational workspace provenance is UNVERIFIED.")
+
 render_kpi_strip([
     ("Risk", f"{risk['risk_score']:.1f}/100", risk["risk_level"]),
     ("Top driver", top_driver, f"{risk['contributions'][top_driver_key]:.1f} risk points"),
@@ -111,10 +128,14 @@ render_kpi_strip([
 ])
 
 st.markdown("## Why this location is at risk")
-left, right = st.columns([1.55, 1], gap="large")
+left, right = st.columns([1.8, 1], gap="large")
 with left:
-    st.markdown(f"### {habitation['name']}")
-    render_risk_badge(risk["risk_level"])
+    render_command_card(
+        "Selected location",
+        str(habitation["name"]),
+        f"The score is composed from transparent weighted factors. The largest contribution is {top_driver.lower()} at {risk['contributions'][top_driver_key]:.1f} risk points.",
+        severity=str(risk["risk_level"]),
+    )
     fig = px.bar(
         contribution_df.sort_values("Contribution"),
         x="Contribution",
@@ -123,19 +144,31 @@ with left:
         text="Contribution",
     )
     fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
-    fig.update_layout(height=300, margin=dict(l=10, r=35, t=10, b=10), xaxis_title="Risk points", yaxis_title="")
+    fig.update_layout(
+        height=315,
+        margin=dict(l=10, r=42, t=15, b=10),
+        xaxis_title="Risk points",
+        yaxis_title="",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+    )
     st.plotly_chart(fig, width="stretch")
 with right:
+    st.markdown("#### Interpretation")
+    render_risk_badge(risk["risk_level"])
     recommendations = {
         "hazard": "Prioritize hazard monitoring, protective works, early warning and exposure reduction.",
         "exposure": "Reduce exposed population through phased movement and land-use controls.",
         "vulnerability": "Prioritize children, elderly people and other vulnerable groups in transport, shelter and medical planning.",
         "accessibility": "Improve route redundancy, transport staging and road-clearance planning.",
     }
-    render_source_card(
-        "Dominant driver",
-        top_driver,
-        recommendations[top_driver_key],
+    render_source_card("Dominant driver", top_driver, recommendations[top_driver_key])
+    completeness = float(habitation.get("hazard_data_completeness", 0) or 0)
+    render_decision_gate(
+        "Evidence completeness",
+        f"{completeness:.0f}% of expected hazard evidence fields are present for this record.",
+        "ok" if completeness >= 80 else "warn",
     )
     if habitation.get("inside_hazard_zone") is not None:
         render_source_card(
@@ -143,10 +176,12 @@ with right:
             "Inside" if habitation.get("inside_hazard_zone") else "Outside",
             f"Nearest hazard distance: {habitation.get('distance_to_hazard_km')} km",
         )
-    completeness = float(habitation.get("hazard_data_completeness", 0) or 0)
-    st.progress(max(0.0, min(1.0, completeness / 100.0)), text=f"Hazard evidence completeness {completeness:.0f}%")
 
-st.markdown("## Component explanation")
+render_section_header(
+    "Factor contributions",
+    "Raw component values are converted into risk points by the frozen analytical weights.",
+    "EXPLAINABLE MODEL",
+)
 component_cols = st.columns(4, gap="small")
 for column, row in zip(component_cols, rows):
     with column:
@@ -156,11 +191,14 @@ for column, row in zip(component_cols, rows):
             f"Weight {row['Weight']:.0%} → {row['Contribution']:.1f} risk points",
         )
 
-st.markdown("## Compare with the active scope")
+render_section_header(
+    "Scope comparison",
+    "Keep the selected location in context without turning this page into another command dashboard.",
+    "TOP 10",
+)
 compare_cols = [c for c in ["name", "population", "risk_score", "risk_level", "relocation_priority"] if c in ordered.columns]
-comparison = ordered[compare_cols].head(10).copy()
 st.dataframe(
-    comparison,
+    ordered[compare_cols].head(10),
     width="stretch",
     hide_index=True,
     column_config={
@@ -218,11 +256,11 @@ with st.expander("Exact risk calculation", expanded=False):
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     st.code("Risk = 0.35H + 0.25E + 0.25V + 0.15A")
 
-st.markdown("## Continue decision flow")
+render_section_header("Continue", "Carry the same focus into the spatial and relocation workflows.", "DECISION FLOW")
 next_left, next_right = st.columns(2, gap="large")
 with next_left:
-    st.page_link("pages/2_Red_Zone_Map.py", label="← Return to hazard map", use_container_width=True)
+    st.page_link("pages/2_Red_Zone_Map.py", label="◉  Return to hazard map", use_container_width=True)
 with next_right:
-    st.page_link("pages/4_Relocation_Planner.py", label="Build relocation plan →", use_container_width=True)
+    st.page_link("pages/4_Relocation_Planner.py", label="⇢  Build relocation plan", use_container_width=True)
 
 render_disclaimer()
