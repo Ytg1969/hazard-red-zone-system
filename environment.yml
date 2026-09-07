@@ -1,22 +1,24 @@
-# Streamlit Community Cloud selected-manifest rebuild marker: 2026-09-07 Hazard Command 2.0 route refresh
+# Streamlit Community Cloud deployment manifest.
+# Keep the Conda solve intentionally minimal; production dependencies are
+# installed from pinned PyPI wheels to avoid long geospatial SAT solves.
 name: hazard-red-zone
 channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - streamlit=1.63.0
-  - pandas=3.0.5
-  - numpy=2.5.2
-  - geopandas=1.1.4
-  - shapely=2.1.2
-  - folium=0.20.0
-  - plotly=6.9.0
-  - networkx=3.6.1
-  - osmnx=2.1.1
-  - reportlab=5.0.1
-  - certifi=2026.7.22
-  - openpyxl=3.1.5
-  - pytest=9.1.1
   - pip
   - pip:
+      - streamlit==1.63.0
+      - pandas==3.0.5
+      - numpy==2.5.2
+      - geopandas==1.1.4
+      - shapely==2.1.2
+      - folium==0.20.0
       - streamlit-folium==0.27.4
+      - plotly==6.9.0
+      - networkx==3.6.1
+      - osmnx==2.1.1
+      - reportlab==5.0.1
+      - certifi==2026.7.22
+      - openpyxl==3.1.5
+      - pytest==9.1.1
