@@ -1,4 +1,4 @@
-# Streamlit Community Cloud selected-manifest rebuild marker: 2026-09-07
+# Streamlit Community Cloud selected-manifest rebuild marker: 2026-09-07 Hazard Command 2.0 route refresh
 name: hazard-red-zone
 channels:
   - conda-forge

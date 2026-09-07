@@ -67,7 +67,9 @@ def test_public_verifier_rejects_unknown_page_redirects_and_waits_for_release_ro
     workflow = VERIFIER.read_text(encoding="utf-8")
     assert "from urllib.parse import urlsplit" in workflow
     assert "release_routes = [" in workflow
-    assert "for attempt in range(1, 61):" in workflow
+    assert "for attempt in range(1, 26):" in workflow
+    assert "Streamlit resolves an unknown page client-side" in workflow
+    assert "page.wait_for_timeout(6000)" in workflow
     assert "final_path != expected_path" in workflow
     assert "resolved to {final_path} instead of expected route {expected_path}" in workflow
     assert "Public Streamlit deployment did not register release routes" in workflow
