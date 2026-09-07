@@ -66,6 +66,9 @@ jobs:
               ("gis-source-inspector", base + "/GIS_Source_Inspector"),
               ("calibrated-hazard-source", base + "/Calibrated_Hazard_Source"),
               ("schema-mapper", base + "/Schema_Mapper"),
+              ("briefing", base + "/Briefing"),
+              ("evidence-center", base + "/Evidence_Center"),
+              ("system-boundaries", base + "/About_System"),
           ]
           fatal_markers = [
               "ModuleNotFoundError",
