@@ -4,7 +4,7 @@ A Streamlit-based geospatial decision-support prototype for identifying hazard-b
 
 ## Core workflow
 
-`Data → GIS Exposure → Multi-Hazard Profile → Vulnerability → Explainable Risk → Carrying Capacity → Routing → Relocation/Optimization → Dashboard → Draft Action Plan`
+`Data → GIS Exposure → Multi-Hazard Profile → Vulnerability → Explainable Risk → Carrying Capacity → Routing → Relocation/Optimization → Incident Command → Briefing`
 
 ## Current demo capability
 
@@ -28,7 +28,8 @@ The presentation path now includes:
 - official IMD district-warning/rainfall context with LIVE→CACHED behavior;
 - official USGS FDSN earthquake context with LIVE→CACHED behavior;
 - dedicated **Live Data Context** page for source status and city-specific external evidence;
-- polished EOC-style frontend, Docker deployment support, tests and GitHub Actions CI.
+- cohesive Hazard Command 3 operator surface with Incident Command, Hazard Map, Risk Intelligence, Relocation, Briefing, Evidence Center and System Boundaries;
+- Docker deployment support, tests and GitHub Actions CI.
 
 ## Demo data honesty
 
@@ -74,14 +75,13 @@ Expected source modes:
 
 ## Suggested five-minute walkthrough
 
-1. **Operational Overview** — All Demo Cities + Combined Multi-Hazard.
-2. **Red Zone Map** — switch Puri / Guwahati / Chennai and show DEMO hazard footprints.
-3. **Risk Analysis** — choose a named hazard and show indicator contributions + final risk contributions.
-4. **Relocation Planner** — safe-shelter ranking, split allocation, deficit and system-wide capacity sharing.
-5. **Scenario Studio** — adjust risk policy weights and show classification impact.
-6. **Live Data Context** — refresh IMD + USGS context and explain LIVE/CACHED/DEMO separation.
-7. **Command Center** — show CAP/RSS alert infrastructure.
-8. **Export** — download the PDF action plan.
+1. **Incident Command** — select the priority focus, review exposed population, immediate relocation demand, safe capacity and decision gates.
+2. **Hazard Map** — switch Puri / Guwahati / Chennai and show DEMO hazard footprints, shelter context and route provenance.
+3. **Risk Intelligence** — show component contributions, dominant drivers and evidence completeness.
+4. **Relocation** — safe-shelter ranking, split allocation, deficit and system-wide capacity sharing.
+5. **Briefing** — generate the operator/judge handoff and export the action plan.
+6. **Live Data Context** — refresh IMD, USGS and NDMA SACHET context and explain LIVE/CACHED/DEMO separation.
+7. **Evidence Center / System Boundaries** — show source provenance, constraints and the decision-support boundary when asked.
 
 See `docs/demo_guide.md` and `docs/pre_demo_checklist.md`.
 
@@ -135,7 +135,7 @@ NRSC/ISRO Bhuvan documents OGC WMS/WMTS services including Flood Hazard and Floo
 
 ## Custom data
 
-Command Center accepts habitation and shelter CSV uploads after schema validation. Uploaded files are user-supplied and are not automatically treated as live government data. A minimum habitation template is downloadable in the UI.
+**Operational Data** is the supported ingestion surface for habitation and shelter CSV/Point GeoJSON inputs after schema validation. Uploaded files are user-supplied and are not automatically treated as live government data. A minimum habitation template is downloadable in the UI.
 
 ## Install
 
