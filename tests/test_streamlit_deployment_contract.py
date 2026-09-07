@@ -7,7 +7,7 @@ CONTRACT = ROOT / "docs" / "streamlit_auto_update.md"
 PRODUCTION_GUIDE = ROOT / "docs" / "production_deployment.md"
 VERIFIER = ROOT / ".github" / "workflows" / "streamlit-site-verification.yml"
 PUBLIC_APP_URL = "https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app"
-EXPECTED_RELEASE = "HC3-2026-09-07-r1"
+EXPECTED_RELEASE = "HC3-2026-09-07-r2"
 
 
 def test_public_streamlit_coordinates_are_pinned_to_main_app():
@@ -54,15 +54,20 @@ def test_post_merge_streamlit_verifier_is_main_only_and_browser_aware():
     assert "page.url" in workflow
 
 
-def test_public_verifier_covers_hazard_command_2_pages():
+def test_public_verifier_covers_hazard_command_3_pages_without_legacy_duplicates():
     workflow = VERIFIER.read_text(encoding="utf-8")
     required_routes = [
+        '("red-zone-map", "/Red_Zone_Map")',
+        '("risk-analysis", "/Risk_Analysis")',
+        '("relocation-planner", "/Relocation_Planner")',
         '("briefing", "/Briefing")',
         '("evidence-center", "/Evidence_Center")',
         '("system-boundaries", "/About_System")',
     ]
     for route in required_routes:
         assert route in workflow
+    assert "/Operations_Hub" not in workflow
+    assert "/Command_Center" not in workflow
 
 
 def test_public_verifier_rejects_unknown_page_redirects_and_waits_for_release_routes():
