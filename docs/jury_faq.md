@@ -55,7 +55,7 @@ It is an optional NetworkX network-simplex comparison layer. Crucially, it can o
 Straight-line distance can recommend operationally poor shelters. Cached OpenStreetMap road graphs are the preferred demo route layer. If unavailable, the application clearly labels the haversine fallback.
 
 ## Can another district use the app?
-Yes. Command Center accepts habitation and shelter CSVs after schema validation. Uploaded files are user-supplied data and are not automatically treated as LIVE government observations.
+Yes. Operational Data accepts habitation and shelter CSV or Point GeoJSON inputs after schema validation. Uploaded files are user-supplied data and are not automatically treated as LIVE government observations.
 
 ## What happens if the internet fails during judging?
 The core analytical workflow is designed to run fully offline from committed DEMO data. SACHET/USGS context may fall back or disappear without breaking risk/capacity/relocation analysis. Road routing can use a pre-cached graph or labelled haversine fallback.

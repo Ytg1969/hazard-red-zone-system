@@ -16,7 +16,7 @@ jobs:
 
     env:
       STREAMLIT_APP_URL: https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app
-      EXPECTED_RELEASE: HC3-2026-09-07-r1
+      EXPECTED_RELEASE: HC3-2026-09-07-r2
 
     steps:
       - name: Wake and wait for public Streamlit endpoint
@@ -58,8 +58,6 @@ jobs:
           release_text = f"Release {expected_release}"
           pages = [
               ("home", "/"),
-              ("operations-hub", "/Operations_Hub"),
-              ("command-center", "/Command_Center"),
               ("red-zone-map", "/Red_Zone_Map"),
               ("risk-analysis", "/Risk_Analysis"),
               ("relocation-planner", "/Relocation_Planner"),

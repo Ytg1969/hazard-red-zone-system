@@ -19,7 +19,7 @@ from src.ui_theme import (
     render_section_header,
 )
 
-DEPLOYMENT_RELEASE = "HC3-2026-09-07-r1"
+DEPLOYMENT_RELEASE = "HC3-2026-09-07-r2"
 
 st.set_page_config(
     page_title="Hazard Command",

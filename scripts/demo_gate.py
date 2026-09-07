@@ -27,13 +27,15 @@ from src.risk_engine import calculate_risk  # noqa: E402
 
 REQUIRED_PAGES = [
     ROOT / "app.py",
-    ROOT / "pages/1_Command_Center.py",
     ROOT / "pages/2_Red_Zone_Map.py",
     ROOT / "pages/3_Risk_Analysis.py",
     ROOT / "pages/4_Relocation_Planner.py",
     ROOT / "pages/5_Scenario_Studio.py",
     ROOT / "pages/6_Methodology.py",
     ROOT / "pages/7_Live_Data_Context.py",
+    ROOT / "pages/13_Briefing.py",
+    ROOT / "pages/14_Evidence_Center.py",
+    ROOT / "pages/15_About_System.py",
 ]
 
 

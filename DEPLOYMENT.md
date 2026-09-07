@@ -69,7 +69,7 @@ If a cache is not available, the application continues with a clearly labelled s
 
 ## Optional NDMA SACHET alert feed
 
-The Command Center can display NDMA SACHET CAP/RSS alert context without coupling it to risk scoring. The connector remains deliberately unconfigured by default so offline startup never depends on the network.
+Live Data Context and System Readiness can display NDMA SACHET CAP/RSS alert context without coupling it to risk scoring. The connector remains deliberately unconfigured by default so offline startup never depends on the network.
 
 The WMO Register of Alerting Authorities lists the National Disaster Management Authority of India CAP feed as:
 
