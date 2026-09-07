@@ -104,7 +104,7 @@ City coordinates are real-geography anchors. Catchment populations, operational 
 
 ### 11. Data upload
 
-Command Center accepts habitation and shelter CSV uploads after the frozen schema validator checks required columns, coordinates and non-negative population/capacity fields. Uploaded data is user supplied and is not automatically labelled as a live government source.
+Operational Data accepts habitation and shelter CSV or Point GeoJSON inputs after the schema validator checks required fields, coordinates and non-negative population/capacity values. Uploaded data is user supplied and is not automatically labelled as a live government source.
 
 ### 12. Limitations
 
