@@ -70,6 +70,10 @@ jobs:
           robocopy . field-bundle\hazard-red-zone-system /E /XD .git .github field-bundle wheelhouse .pytest_cache __pycache__ /XF *.pyc
           $copyCode = $LASTEXITCODE
           if ($copyCode -gt 7) { exit $copyCode }
+          # Robocopy uses 0-7 as successful outcomes. Reset the native-command exit
+          # code so GitHub Actions does not treat a successful copy (for example 1)
+          # as a failed PowerShell step.
+          $global:LASTEXITCODE = 0
 
           Copy-Item wheelhouse field-bundle\wheelhouse -Recurse
           Copy-Item field_preflight.json field-bundle\field_preflight.json

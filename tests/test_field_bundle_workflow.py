@@ -66,6 +66,13 @@ def test_field_bundle_records_exact_build_provenance():
         assert fragment in text, f"field bundle workflow is missing build provenance: {fragment}"
 
 
+def test_field_bundle_normalizes_successful_robocopy_exit_codes():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "$copyCode = $LASTEXITCODE" in text
+    assert "if ($copyCode -gt 7) { exit $copyCode }" in text
+    assert "$global:LASTEXITCODE = 0" in text
+
+
 def test_windows_bundle_installer_creates_isolated_offline_environment():
     text = INSTALLER.read_text(encoding="utf-8")
     required_fragments = [
