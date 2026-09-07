@@ -48,27 +48,34 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          from urllib.parse import urlsplit
+
           from playwright.sync_api import sync_playwright
 
           base = os.environ["STREAMLIT_APP_URL"].rstrip("/")
           pages = [
-              ("home", base + "/"),
-              ("operations-hub", base + "/Operations_Hub"),
-              ("command-center", base + "/Command_Center"),
-              ("red-zone-map", base + "/Red_Zone_Map"),
-              ("risk-analysis", base + "/Risk_Analysis"),
-              ("relocation-planner", base + "/Relocation_Planner"),
-              ("scenario-studio", base + "/Scenario_Studio"),
-              ("methodology", base + "/Methodology"),
-              ("live-data-context", base + "/Live_Data_Context"),
-              ("system-readiness", base + "/System_Readiness"),
-              ("operational-data", base + "/Operational_Data"),
-              ("gis-source-inspector", base + "/GIS_Source_Inspector"),
-              ("calibrated-hazard-source", base + "/Calibrated_Hazard_Source"),
-              ("schema-mapper", base + "/Schema_Mapper"),
-              ("briefing", base + "/Briefing"),
-              ("evidence-center", base + "/Evidence_Center"),
-              ("system-boundaries", base + "/About_System"),
+              ("home", "/"),
+              ("operations-hub", "/Operations_Hub"),
+              ("command-center", "/Command_Center"),
+              ("red-zone-map", "/Red_Zone_Map"),
+              ("risk-analysis", "/Risk_Analysis"),
+              ("relocation-planner", "/Relocation_Planner"),
+              ("scenario-studio", "/Scenario_Studio"),
+              ("methodology", "/Methodology"),
+              ("live-data-context", "/Live_Data_Context"),
+              ("system-readiness", "/System_Readiness"),
+              ("operational-data", "/Operational_Data"),
+              ("gis-source-inspector", "/GIS_Source_Inspector"),
+              ("calibrated-hazard-source", "/Calibrated_Hazard_Source"),
+              ("schema-mapper", "/Schema_Mapper"),
+              ("briefing", "/Briefing"),
+              ("evidence-center", "/Evidence_Center"),
+              ("system-boundaries", "/About_System"),
+          ]
+          release_routes = [
+              ("briefing", "/Briefing"),
+              ("evidence-center", "/Evidence_Center"),
+              ("system-boundaries", "/About_System"),
           ]
           fatal_markers = [
               "ModuleNotFoundError",
@@ -81,15 +88,49 @@ jobs:
               "/auth/app",
           ]
 
+          def normalized_path(value: str) -> str:
+              path = urlsplit(value).path or "/"
+              return path.rstrip("/") or "/"
+
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
               page = browser.new_page(viewport={"width": 1440, "height": 1000})
+
+              # Community Cloud refresh can lag GitHub Actions. Wait for routes that
+              # were introduced by this release instead of accidentally accepting
+              # Streamlit's unknown-page redirect back to the app root.
+              for attempt in range(1, 61):
+                  pending = []
+                  for label, path in release_routes:
+                      response = page.goto(base + path, wait_until="domcontentloaded", timeout=60000)
+                      page.wait_for_timeout(750)
+                      status = response.status if response else 0
+                      final_url = page.url
+                      final_path = normalized_path(final_url)
+                      expected_path = normalized_path(path)
+                      auth_hits = [marker for marker in auth_markers if marker in final_url]
+                      if status >= 400 or auth_hits or final_path != expected_path:
+                          pending.append(f"{label}: HTTP {status}, final path {final_path}")
+                  if not pending:
+                      print(f"Release routes registered after {attempt} attempt(s).")
+                      break
+                  if attempt == 60:
+                      browser.close()
+                      raise SystemExit(
+                          "Public Streamlit deployment did not register release routes: " + " | ".join(pending)
+                      )
+                  print(f"WAIT release routes attempt {attempt}/60: " + " | ".join(pending))
+                  page.wait_for_timeout(10000)
+
               failures = []
-              for label, url in pages:
+              for label, path in pages:
+                  url = base + path
                   response = page.goto(url, wait_until="domcontentloaded", timeout=90000)
                   page.wait_for_timeout(6000)
                   status = response.status if response else 0
                   final_url = page.url
+                  final_path = normalized_path(final_url)
+                  expected_path = normalized_path(path)
                   body = page.locator("body").inner_text(timeout=30000)
                   hits = [marker for marker in fatal_markers if marker in body]
                   auth_hits = [marker for marker in auth_markers if marker in final_url]
@@ -97,10 +138,16 @@ jobs:
                       failures.append(f"{label}: HTTP {status}")
                   if auth_hits:
                       failures.append(f"{label}: redirected to Streamlit authentication ({final_url})")
+                  if final_path != expected_path:
+                      failures.append(
+                          f"{label}: resolved to {final_path} instead of expected route {expected_path}"
+                      )
                   if hits:
                       failures.append(f"{label}: {', '.join(hits)}")
-                  if status < 400 and not auth_hits and not hits:
-                      print(f"PASS {label}: HTTP {status}, final URL {final_url}, no fatal Streamlit error markers")
+                  if status < 400 and not auth_hits and final_path == expected_path and not hits:
+                      print(
+                          f"PASS {label}: HTTP {status}, route {final_path}, no fatal Streamlit error markers"
+                      )
               browser.close()
 
           if failures:
