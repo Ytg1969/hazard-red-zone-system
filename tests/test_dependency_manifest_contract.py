@@ -18,6 +18,7 @@ EXPECTED_DIRECT = {
     "plotly": "6.9.0",
     "networkx": "3.6.1",
     "osmnx": "2.1.1",
+    "scikit-learn": "1.7.1",
     "reportlab": "5.0.1",
     "certifi": "2026.7.22",
     "openpyxl": "3.1.5",
@@ -55,7 +56,6 @@ def test_conda_manifest_matches_direct_production_versions():
     assert "- python=3.12" in text
     assert "- pip" in text
     assert "- pytest==9.1.1" in text or "- pytest=9.1.1" in text
-    assert "scikit-learn" not in text
 
 
 def test_streamlit_conda_manifest_keeps_solver_minimal():
