@@ -22,8 +22,6 @@ from src.risk_engine import DEFAULT_WEIGHTS  # noqa: E402
 
 REQUIRED_PAGES = [
     ROOT / "app.py",
-    ROOT / "pages/0_Operations_Hub.py",
-    ROOT / "pages/1_Command_Center.py",
     ROOT / "pages/2_Red_Zone_Map.py",
     ROOT / "pages/3_Risk_Analysis.py",
     ROOT / "pages/4_Relocation_Planner.py",
@@ -35,6 +33,9 @@ REQUIRED_PAGES = [
     ROOT / "pages/10_GIS_Source_Inspector.py",
     ROOT / "pages/11_Calibrated_Hazard_Source.py",
     ROOT / "pages/12_Schema_Mapper.py",
+    ROOT / "pages/13_Briefing.py",
+    ROOT / "pages/14_Evidence_Center.py",
+    ROOT / "pages/15_About_System.py",
 ]
 
 _WMS_SAMPLE = """<WMS_Capabilities version='1.3.0' xmlns='http://www.opengis.net/wms'>
