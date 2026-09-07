@@ -27,13 +27,12 @@ from src.risk_engine import calculate_risk  # noqa: E402
 
 REQUIRED_PAGES = [
     ROOT / "app.py",
-    ROOT / "pages/1_Command_Center.py",
     ROOT / "pages/2_Red_Zone_Map.py",
     ROOT / "pages/3_Risk_Analysis.py",
     ROOT / "pages/4_Relocation_Planner.py",
-    ROOT / "pages/5_Scenario_Studio.py",
-    ROOT / "pages/6_Methodology.py",
-    ROOT / "pages/7_Live_Data_Context.py",
+    ROOT / "pages/13_Briefing.py",
+    ROOT / "pages/14_Evidence_Center.py",
+    ROOT / "pages/15_About_System.py",
 ]
 
 
@@ -42,8 +41,6 @@ def run_demo_gate() -> dict:
     if missing_pages:
         raise RuntimeError(f"required Streamlit pages are missing: {missing_pages}")
 
-    # Offline parser smoke for the official IMD warning contract. No network is
-    # required by the presentation gate.
     parsed_warning = normalize_warning_record(
         {"District": "Puri", "Day_1": "2,4", "Day1_Color": "2"}
     )
