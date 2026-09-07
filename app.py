@@ -7,13 +7,16 @@ from src.streamlit_workspace import resolve_operational_workspace
 from src.ui_theme import (
     RISK_COLORS,
     inject_global_css,
+    render_command_card,
+    render_context_bar,
     render_data_mode_indicator,
+    render_decision_gate,
     render_demo_scope_controls,
     render_disclaimer,
     render_kpi_strip,
     render_page_header,
     render_risk_badge,
-    render_source_card,
+    render_section_header,
 )
 
 DEPLOYMENT_RELEASE = "HC2-2026-09-07-r2"
@@ -22,14 +25,13 @@ st.set_page_config(
     page_title="Hazard Command",
     page_icon="HZ",
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="collapsed",
 )
 inject_global_css()
 render_page_header(
-    "Hazard Command",
-    "One operational picture for danger, people, shelter capacity and the next safe action.",
+    "Incident Command",
+    "A single decision surface for risk, exposed population, safe capacity and the next review action.",
 )
-st.caption(f"Release {DEPLOYMENT_RELEASE}")
 
 resolved = None
 try:
@@ -41,10 +43,10 @@ if resolved:
     payload = resolved["payload"]
     habitations_raw = resolved["habitations"]
     shelters_raw = resolved["shelters"]
-    active_label = payload.get("label", "Operational dataset")
+    active_label = str(payload.get("label", "Operational dataset"))
     active_mode = str(payload.get("habitation_mode", "UNVERIFIED")).upper()
     with st.sidebar:
-        st.markdown("### Incident scope")
+        st.markdown("### Analytical context")
         st.success(active_label)
         hazard_profile = st.selectbox(
             "Hazard profile",
@@ -53,17 +55,13 @@ if resolved:
             format_func=lambda value: "Stored / calibrated GIS" if value == "stored" else value.replace("_", " ").title(),
             key="command_operational_hazard",
         )
-    if active_mode in {"LIVE", "CACHED", "DEMO"}:
-        render_data_mode_indicator(active_mode)
-    else:
-        st.warning("Active workspace provenance is unverified.")
-    context_caption = f"{active_label} · {hazard_profile.replace('_', ' ').title()}"
+    mode_label = active_mode if active_mode in {"LIVE", "CACHED", "DEMO"} else "UNVERIFIED"
 else:
-    render_data_mode_indicator("DEMO")
     city, hazard_profile = render_demo_scope_controls("command")
     habitations_raw, shelters_raw = load_demo_data(city)
     active_label = city
-    context_caption = f"{city} · {hazard_profile.replace('_', ' ').title()} · demonstration scenario"
+    active_mode = "DEMO"
+    mode_label = "DEMO"
 
 try:
     habitations = enrich_habitations(
@@ -80,143 +78,150 @@ except Exception as exc:
     st.stop()
 
 priority = habitations.sort_values("risk_score", ascending=False).copy()
-top = priority.iloc[0]
+if priority.empty:
+    st.error("No habitation records are available in the active scope.")
+    render_disclaimer()
+    st.stop()
+
+focus_options = priority["name"].astype(str).tolist()
+with st.sidebar:
+    st.markdown("### Focus")
+    default_focus = st.session_state.get("focus_location")
+    default_index = focus_options.index(default_focus) if default_focus in focus_options else 0
+    focus_name = st.selectbox("Priority location", focus_options, index=default_index, key="command_focus")
+    st.session_state["focus_location"] = focus_name
+    st.caption("The focus is carried as session context for the operator workflow.")
+
+focus = priority.loc[priority["name"].astype(str) == str(focus_name)].iloc[0]
 critical = priority[priority["risk_level"] == "CRITICAL"]
 high = priority[priority["risk_level"] == "HIGH"]
-at_risk_population = int(summary["population_at_risk"])
+immediate = int(summary["immediate_relocation_population"])
 available_capacity = int(summary["available_shelter_capacity"])
-capacity_gap = max(0, int(summary["immediate_relocation_population"]) - available_capacity)
-coverage_pct = 100.0 if int(summary["immediate_relocation_population"]) <= 0 else min(
-    100.0,
-    available_capacity / int(summary["immediate_relocation_population"]) * 100.0,
-)
+capacity_gap = max(0, immediate - available_capacity)
+coverage_pct = 100.0 if immediate <= 0 else min(100.0, available_capacity / immediate * 100.0)
 
-st.caption(context_caption)
+render_context_bar(
+    active_label,
+    f"{hazard_profile.replace('_', ' ').title()} · {mode_label}",
+    f"Release {DEPLOYMENT_RELEASE}",
+)
+if active_mode in {"LIVE", "CACHED", "DEMO"}:
+    render_data_mode_indicator(active_mode)
+else:
+    st.warning("Active workspace provenance is UNVERIFIED; treat operational values as unverified until reviewed.")
+
 render_kpi_strip([
-    ("People at risk", f"{at_risk_population:,}", "HIGH + CRITICAL population"),
+    ("People at risk", f"{int(summary['population_at_risk']):,}", "HIGH + CRITICAL population"),
     ("Critical zones", f"{len(critical):,}", f"{len(high):,} additional HIGH zones"),
-    ("Relocate now", f"{int(summary['immediate_relocation_population']):,}", "Immediate decision-support priority"),
+    ("Relocate now", f"{immediate:,}", "Immediate decision-support priority"),
     ("Safe capacity", f"{available_capacity:,}", f"{coverage_pct:.0f}% of immediate demand"),
-    ("Capacity gap", f"{capacity_gap:,}", "Uncovered immediate demand" if capacity_gap else "Current capacity covers immediate demand"),
+    ("Capacity gap", f"{capacity_gap:,}", "Uncovered immediate demand" if capacity_gap else "Immediate demand currently covered"),
 ])
 
-st.markdown("## Incident picture")
-left, right = st.columns([1.7, 1], gap="large")
-
-with left:
-    st.markdown(f"### {top['name']}")
-    badge_col, score_col, population_col = st.columns([1, 1, 1.25], gap="small")
-    with badge_col:
-        render_risk_badge(top["risk_level"])
-    with score_col:
-        st.metric("Risk", f"{float(top['risk_score']):.1f}/100")
-    with population_col:
-        st.metric("Population", f"{int(top['population']):,}")
-
-    st.write(f"**Primary risk drivers:** {top['risk_drivers']}")
-    completeness = float(top.get("hazard_data_completeness", 0) or 0)
-    st.progress(
-        max(0.0, min(1.0, completeness / 100.0)),
-        text=f"Hazard evidence completeness {completeness:.0f}%",
-    )
-
-    if str(top["risk_level"]).upper() == "CRITICAL":
-        st.error(
-            f"Highest-priority location is CRITICAL with {int(top['population']):,} people in scope. "
-            "Review safe shelter capacity and route evidence before administrative action."
-        )
-    elif str(top["risk_level"]).upper() == "HIGH":
-        st.warning("Highest-priority location is HIGH risk. Continue to relocation review and source validation.")
-    else:
-        st.info("No HIGH/CRITICAL location is currently at the top of this analytical scope.")
-
-with right:
-    if capacity_gap:
-        render_source_card(
-            "Capacity status",
-            f"Gap: {capacity_gap:,}",
-            "Available safe capacity is below immediate relocation demand. Multi-shelter planning or additional verified capacity is required.",
-        )
-    else:
-        render_source_card(
-            "Capacity status",
-            "Covered",
-            "Current safe available capacity is sufficient for the immediate relocation population in this analytical scope.",
-        )
-    st.markdown("### Next action")
-    st.page_link("pages/2_Red_Zone_Map.py", label="1 · Inspect hazard map", use_container_width=True)
-    st.page_link("pages/3_Risk_Analysis.py", label="2 · Explain the risk", use_container_width=True)
-    st.page_link("pages/4_Relocation_Planner.py", label="3 · Build relocation plan", use_container_width=True)
-    st.page_link("pages/0_Operations_Hub.py", label="4 · Check live context", use_container_width=True)
-
-st.markdown("## Priority queue")
-queue_cols = [
-    c
-    for c in ["name", "population", "risk_score", "risk_level", "relocation_priority", "risk_drivers"]
-    if c in priority.columns
-]
-queue = priority[queue_cols].head(8).copy()
-st.dataframe(
-    queue,
-    width="stretch",
-    hide_index=True,
-    column_config={
-        "risk_score": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.1f"),
-        "population": st.column_config.NumberColumn("Population", format=",%d"),
-    },
+render_section_header(
+    "Decision board",
+    "Focus one location, verify why it is risky, then validate capacity and routing before any administrative decision.",
+    "ACTIVE INCIDENT",
 )
+main_col, gate_col = st.columns([2.05, 1], gap="large")
 
-st.markdown("## Risk distribution")
-levels = ["CRITICAL", "HIGH", "MODERATE", "LOW"]
-counts = {level: int((priority["risk_level"] == level).sum()) for level in levels}
-population_by_level = {
-    level: int(priority.loc[priority["risk_level"] == level, "population"].sum())
-    for level in levels
-}
-columns = st.columns(4, gap="small")
-for column, level in zip(columns, levels):
-    with column:
+with main_col:
+    severity = str(focus["risk_level"]).upper()
+    render_command_card(
+        "Priority focus",
+        str(focus["name"]),
+        f"{int(focus['population']):,} people · {float(focus['risk_score']):.1f}/100 risk · {str(focus['relocation_priority']).replace('_', ' ')} priority",
+        severity=severity,
+    )
+    badge_col, risk_col, evidence_col = st.columns([.72, 1, 1.2], gap="small")
+    with badge_col:
+        render_risk_badge(severity)
+    with risk_col:
+        st.metric("Risk score", f"{float(focus['risk_score']):.1f}/100")
+    with evidence_col:
+        completeness = float(focus.get("hazard_data_completeness", 0) or 0)
+        st.metric("Evidence", f"{completeness:.0f}%", help="Hazard evidence completeness for the selected location")
+
+    st.markdown(f"**Dominant drivers** · {focus['risk_drivers']}")
+    completeness = float(focus.get("hazard_data_completeness", 0) or 0)
+    st.progress(max(0.0, min(1.0, completeness / 100.0)), text=f"Evidence completeness {completeness:.0f}%")
+
+    if severity == "CRITICAL":
+        st.error("CRITICAL analytical risk. Validate shelter safety, available capacity and route evidence before escalation.")
+    elif severity == "HIGH":
+        st.warning("HIGH analytical risk. Continue through risk explanation and relocation review.")
+    else:
+        st.info("Selected location is below HIGH risk in the current analytical scope. Continue monitoring and evidence review.")
+
+with gate_col:
+    st.markdown("#### Decision gates")
+    render_decision_gate(
+        "Analytical risk available",
+        f"Risk = 0.35H + 0.25E + 0.25V + 0.15A · selected score {float(focus['risk_score']):.1f}",
+        "danger" if severity == "CRITICAL" else "warn" if severity == "HIGH" else "ok",
+    )
+    render_decision_gate(
+        "Capacity check",
+        f"{available_capacity:,} safe places available against {immediate:,} immediate demand",
+        "danger" if capacity_gap else "ok",
+    )
+    render_decision_gate(
+        "Authority boundary",
+        "Decision support only; the application does not issue evacuation orders.",
+        "ok",
+    )
+    st.markdown("#### Continue workflow")
+    st.page_link("pages/2_Red_Zone_Map.py", label="◉  Inspect spatial picture", use_container_width=True)
+    st.page_link("pages/3_Risk_Analysis.py", label="◒  Explain selected risk", use_container_width=True)
+    st.page_link("pages/4_Relocation_Planner.py", label="⇢  Build relocation plan", use_container_width=True)
+    st.page_link("pages/13_Briefing.py", label="▤  Generate incident briefing", use_container_width=True)
+
+render_section_header(
+    "Priority register",
+    "A compact queue for operator triage; deeper evidence stays in Risk Intelligence and the map.",
+    f"{len(priority)} LOCATIONS",
+)
+register_tab, distribution_tab = st.tabs(["Priority queue", "Risk mix"])
+with register_tab:
+    queue_cols = [
+        c
+        for c in ["name", "population", "risk_score", "risk_level", "relocation_priority", "risk_drivers"]
+        if c in priority.columns
+    ]
+    st.dataframe(
+        priority[queue_cols].head(10),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "risk_score": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.1f"),
+            "population": st.column_config.NumberColumn("Population", format=",%d"),
+        },
+    )
+with distribution_tab:
+    levels = ["CRITICAL", "HIGH", "MODERATE", "LOW"]
+    columns = st.columns(4, gap="small")
+    for column, level in zip(columns, levels):
+        count = int((priority["risk_level"] == level).sum())
+        population = int(priority.loc[priority["risk_level"] == level, "population"].sum())
         color = RISK_COLORS[level]
-        st.markdown(
-            f"<div class='hz-card' style='border-top:3px solid {color}'>"
-            f"<div class='label'>{level}</div>"
-            f"<div class='value'>{counts[level]} locations</div>"
-            f"<div class='detail'>{population_by_level[level]:,} people</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        with column:
+            st.markdown(
+                f"<div class='hz-card' style='border-top:2px solid {color}'>"
+                f"<div class='label'>{level}</div>"
+                f"<div class='value'>{count} locations</div>"
+                f"<div class='detail'>{population:,} people</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
-st.markdown("## Operator workspace")
-workflow_left, workflow_mid, workflow_right = st.columns(3, gap="large")
-with workflow_left:
-    render_source_card(
-        "Hazard & exposure",
-        "Map-first review",
-        "Inspect red zones, affected population, qualified shelters and route provenance in one spatial view.",
-    )
-    st.page_link("pages/2_Red_Zone_Map.py", label="Open map →")
-with workflow_mid:
-    render_source_card(
-        "Relocation decision",
-        "Capacity constrained",
-        "Rank only shelters that pass safety and available-capacity gates; never overallocate shared resources.",
-    )
-    st.page_link("pages/4_Relocation_Planner.py", label="Open planner →")
-with workflow_right:
-    render_source_card(
-        "Situation context",
-        "Source aware",
-        "Refresh external context when connected while keeping uncalibrated observations separate from baseline analytical risk.",
-    )
-    st.page_link("pages/0_Operations_Hub.py", label="Open context →")
-
-with st.expander("Evidence, assumptions & system tools", expanded=False):
+with st.expander("Evidence and technical controls", expanded=False):
+    st.caption("Secondary tools are intentionally removed from the primary decision flow.")
     tool_cols = st.columns(4, gap="small")
     links = [
-        ("Operational data", "pages/9_Operational_Data.py"),
-        ("System readiness", "pages/8_System_Readiness.py"),
-        ("GIS evidence", "pages/10_GIS_Source_Inspector.py"),
-        ("Method", "pages/6_Methodology.py"),
+        ("Evidence Center", "pages/14_Evidence_Center.py"),
+        ("Operational Data", "pages/9_Operational_Data.py"),
+        ("System Readiness", "pages/8_System_Readiness.py"),
+        ("System Boundaries", "pages/15_About_System.py"),
     ]
     for col, (label, path) in zip(tool_cols, links):
         with col:
