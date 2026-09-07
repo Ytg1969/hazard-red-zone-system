@@ -23,17 +23,18 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 60); do
-            root_code="$(curl -L --silent --show-error --max-time 30 -o /tmp/streamlit-root.html -w '%{http_code}' "$STREAMLIT_APP_URL/" || true)"
+            root_code="$(curl --silent --show-error --max-time 30 -o /tmp/streamlit-root.html -D /tmp/streamlit-root.headers -w '%{http_code}' "$STREAMLIT_APP_URL/" || true)"
+            root_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' /tmp/streamlit-root.headers 2>/dev/null || true)"
             health_code="$(curl --silent --show-error --max-time 20 -o /tmp/streamlit-health.txt -w '%{http_code}' "$STREAMLIT_APP_URL/_stcore/health" || true)"
             health_body="$(tr -d '\r\n' < /tmp/streamlit-health.txt 2>/dev/null || true)"
-            echo "Attempt $attempt/60: root=$root_code health=$health_code body=${health_body:-<empty>}"
+            echo "Attempt $attempt/60: root=$root_code location=${root_location:-<none>} health=$health_code body=${health_body:-<empty>}"
             if [[ "$root_code" =~ ^2[0-9][0-9]$ || "$root_code" =~ ^3[0-9][0-9]$ ]]; then
-              echo "Public Streamlit endpoint is reachable; continuing to browser smoke."
+              echo "Streamlit host is responding; continuing to browser verification."
               exit 0
             fi
             sleep 10
           done
-          echo "Public Streamlit endpoint did not become reachable in time."
+          echo "Streamlit host did not become reachable in time."
           exit 1
 
       - name: Install browser smoke dependencies
@@ -62,6 +63,10 @@ jobs:
               "Traceback:",
               "This app has encountered an error",
           ]
+          auth_markers = [
+              "share.streamlit.io/-/auth",
+              "/auth/app",
+          ]
 
           with sync_playwright() as p:
               browser = p.chromium.launch(headless=True)
@@ -71,14 +76,18 @@ jobs:
                   response = page.goto(url, wait_until="domcontentloaded", timeout=90000)
                   page.wait_for_timeout(8000)
                   status = response.status if response else 0
+                  final_url = page.url
                   body = page.locator("body").inner_text(timeout=30000)
                   hits = [marker for marker in fatal_markers if marker in body]
+                  auth_hits = [marker for marker in auth_markers if marker in final_url]
                   if status >= 400:
                       failures.append(f"{label}: HTTP {status}")
+                  if auth_hits:
+                      failures.append(f"{label}: redirected to Streamlit authentication ({final_url})")
                   if hits:
                       failures.append(f"{label}: {', '.join(hits)}")
-                  if status < 400 and not hits:
-                      print(f"PASS {label}: HTTP {status}, no fatal Streamlit error markers")
+                  if status < 400 and not auth_hits and not hits:
+                      print(f"PASS {label}: HTTP {status}, final URL {final_url}, no fatal Streamlit error markers")
               browser.close()
 
           if failures:
