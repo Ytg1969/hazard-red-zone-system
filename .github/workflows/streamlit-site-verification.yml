@@ -16,7 +16,7 @@ jobs:
 
     env:
       STREAMLIT_APP_URL: https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app
-      EXPECTED_RELEASE: HC3-2026-09-07-r2
+      EXPECTED_RELEASE: HC5-2026-09-07-retro-r1
 
     steps:
       - name: Wake and wait for public Streamlit endpoint

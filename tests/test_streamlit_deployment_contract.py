@@ -7,7 +7,7 @@ CONTRACT = ROOT / "docs" / "streamlit_auto_update.md"
 PRODUCTION_GUIDE = ROOT / "docs" / "production_deployment.md"
 VERIFIER = ROOT / ".github" / "workflows" / "streamlit-site-verification.yml"
 PUBLIC_APP_URL = "https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app"
-EXPECTED_RELEASE = "HC3-2026-09-07-r2"
+EXPECTED_RELEASE = "HC5-2026-09-07-retro-r1"
 
 
 def test_public_streamlit_coordinates_are_pinned_to_main_app():
