@@ -77,15 +77,18 @@ The app can initially be deployed with no secrets for public/no-key context and 
 
 After deployment, smoke-test these pages in this order:
 
-1. Overview / landing page
-2. Operations Hub
-3. Operational Data
-4. Red Zone Map
-5. Risk Analysis
-6. Relocation Planner and PDF export
-7. Live Data Explorer
+1. Incident Command / landing page
+2. Red Zone Map
+3. Risk Analysis
+4. Relocation Planner
+5. Briefing and PDF export
+6. Live Data Context
+7. Operational Data
 8. System Readiness
-9. GIS Source Inspector
+9. Evidence Center and System Boundaries
+10. GIS Source Inspector / calibrated hazard tooling as needed
+
+The retired Operations Hub and duplicate Command Center pages are intentionally absent from the Hazard Command 3 public surface.
 
 If deployment fails, record the first red build/runtime error before changing dependencies.
 
