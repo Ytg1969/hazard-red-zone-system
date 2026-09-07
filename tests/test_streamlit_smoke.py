@@ -44,6 +44,10 @@ OFFLINE_CORE_PAGES = [
     "pages/14_Evidence_Center.py",
     "pages/15_About_System.py",
 ]
+LEGACY_DUPLICATE_PAGES = [
+    "pages/0_Operations_Hub.py",
+    "pages/1_Command_Center.py",
+]
 
 
 def _main_app() -> AppTest:
@@ -55,6 +59,11 @@ def _main_app() -> AppTest:
 
 def test_streamlit_main_smoke():
     _main_app()
+
+
+def test_legacy_duplicate_pages_are_not_part_of_hazard_command_3():
+    for page in LEGACY_DUPLICATE_PAGES:
+        assert not (ROOT / page).exists(), f"Legacy duplicate page returned: {page}"
 
 
 @pytest.mark.parametrize("page", CHILD_PAGES, ids=lambda page: Path(page).name)
