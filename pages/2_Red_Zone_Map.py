@@ -21,6 +21,7 @@ from src.ui_theme import (
     render_kpi_strip,
     render_page_header,
     render_risk_badge,
+    render_source_card,
 )
 
 ROAD_GRAPH_FILES = {
@@ -35,9 +36,12 @@ def _red_zone_radius_m(risk_score: float) -> float:
     return 650.0 + (score - 50.0) * 24.0
 
 
-st.set_page_config(page_title="Red Zone Map", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="Hazard Map", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
-render_page_header("Red Zone Map", "Inspect red zones, compare safe shelter options and verify route provenance in one decision-focused map.")
+render_page_header(
+    "Hazard Map",
+    "Select a location, see the danger picture, compare qualified shelters and verify route provenance without leaving the map.",
+)
 
 is_offline = offline_mode()
 resolved = None
@@ -52,13 +56,18 @@ hazard_source = None
 
 if operational:
     workspace = resolved["payload"]
-    mode = workspace.get("habitation_mode", "UNVERIFIED")
+    mode = str(workspace.get("habitation_mode", "UNVERIFIED")).upper()
     if mode in {"LIVE", "CACHED", "DEMO"}:
         render_data_mode_indicator(mode)
     else:
         st.warning("Operational workspace provenance is UNVERIFIED.")
     area_label = workspace.get("label", "Operational area")
-    hazard_profile = st.sidebar.selectbox("Analytical hazard profile", ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"], index=0, format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title())
+    hazard_profile = st.sidebar.selectbox(
+        "Hazard profile",
+        ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+        index=0,
+        format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title(),
+    )
     habitations_raw = resolved["habitations"]
     shelters_raw = resolved["shelters"]
     hazard_data = None
@@ -70,10 +79,7 @@ if operational:
         except Exception as exc:
             st.error(f"Configured operational hazard layer could not be loaded: {exc}")
             st.stop()
-    st.sidebar.success(f"Operational workspace: {area_label}")
-    if resolved.get("origin") == "configured_feeds":
-        st.sidebar.caption("Habitation/site feeds cached for 5 min")
-    st.sidebar.page_link("pages/9_Operational_Data.py", label="Manage operational data")
+    st.sidebar.success(f"Scope: {area_label}")
 else:
     render_data_mode_indicator("DEMO")
     city, hazard_profile = render_demo_scope_controls("map")
@@ -82,53 +88,52 @@ else:
     hazard_data = load_demo_hazards()
 
 try:
-    habitations = enrich_habitations(habitations_raw, hazard_data=hazard_data, hazard_type=hazard_profile, add_coordination_zones=not operational)
+    habitations = enrich_habitations(
+        habitations_raw,
+        hazard_data=hazard_data,
+        hazard_type=hazard_profile,
+        add_coordination_zones=not operational,
+    )
     shelters = enrich_shelters(shelters_raw)
 except Exception as exc:
-    st.error(f"Unable to prepare red-zone map: {exc}")
+    st.error(f"Unable to prepare hazard map: {exc}")
     render_disclaimer()
     st.stop()
 
 with st.sidebar:
-    with st.expander("Map layers & filters", expanded=False):
-        risk_levels = st.multiselect("Risk levels", ["CRITICAL", "HIGH", "MODERATE", "LOW"], default=["CRITICAL", "HIGH", "MODERATE", "LOW"])
-        show_population = st.checkbox("Scale markers by population", value=True)
-        show_red_zones = st.checkbox("Show HIGH / CRITICAL decision zones", value=True)
-        show_shelters = st.checkbox("Show safe shelter candidates", value=True)
-        show_route = st.checkbox("Show selected shelter route", value=True)
+    st.markdown("### Map view")
+    risk_levels = st.multiselect(
+        "Visible risk levels",
+        ["CRITICAL", "HIGH", "MODERATE", "LOW"],
+        default=["CRITICAL", "HIGH", "MODERATE", "LOW"],
+    )
+    with st.expander("Layers & routing", expanded=False):
+        show_red_zones = st.checkbox("Decision zones", value=True)
+        show_shelters = st.checkbox("Qualified shelters", value=True)
+        show_route = st.checkbox("Selected route", value=True)
+        show_population = st.checkbox("Population-scaled markers", value=True)
         allow_live_route = st.checkbox(
-            "Use live road routing when cache is missing",
+            "Live road routing if cache is missing",
             value=not is_offline,
             disabled=is_offline,
         )
-        if is_offline:
-            st.caption("Offline field mode disables live OSRM. A local GraphML road network is still preferred when available.")
-
-        if not operational:
+        if not operational and not is_offline:
             bhuvan_options = layers_for_city(city)
-            if bhuvan_options:
-                st.markdown("**Authoritative GIS context**")
-                if is_offline:
-                    st.caption("Bhuvan WMS overlays are disabled offline to avoid network requests.")
-                elif st.checkbox("Show Bhuvan WMS overlay", value=False):
-                    labels = [item["label"] for item in bhuvan_options]
-                    chosen = st.selectbox("Bhuvan layer", labels)
-                    selected_bhuvan = next(item for item in bhuvan_options if item["label"] == chosen)
-                    st.caption("Context only; this WMS is not a calibrated numerical input.")
+            if bhuvan_options and st.checkbox("Authoritative Bhuvan context", value=False):
+                labels = [item["label"] for item in bhuvan_options]
+                chosen = st.selectbox("Bhuvan layer", labels)
+                selected_bhuvan = next(item for item in bhuvan_options if item["label"] == chosen)
+                st.caption("Context only; this overlay does not alter analytical risk.")
 
 filtered = habitations[habitations["risk_level"].isin(risk_levels)].copy()
 if filtered.empty:
-    st.info("No habitations match the selected filters.")
+    st.info("No locations match the current risk filter.")
     st.stop()
 
-head_left, head_right = st.columns([2.2, 1])
-with head_left:
-    selected_name = st.selectbox("Inspect habitation", filtered.sort_values("risk_score", ascending=False)["name"].tolist())
-with head_right:
-    st.caption("Active scope")
-    st.markdown(f"**{area_label}** · {hazard_profile.replace('_', ' ').title()}")
-
+priority_names = filtered.sort_values("risk_score", ascending=False)["name"].tolist()
+selected_name = st.selectbox("Inspect location", priority_names)
 selected = filtered[filtered["name"] == selected_name].iloc[0]
+
 local_shelters = shelters
 if not operational and selected.get("demo_city") and "demo_city" in shelters.columns:
     local_shelters = shelters[shelters["demo_city"] == selected["demo_city"]].copy()
@@ -136,58 +141,107 @@ ranked_shelters = rank_shelters(selected.to_dict(), local_shelters)
 
 selected_shelter_name = None
 if ranked_shelters:
-    labels = [f"{i+1}. {s['shelter_name']} · suitability {s['suitability_score']:.1f}" for i, s in enumerate(ranked_shelters)]
-    chosen = st.selectbox("Route to safe shelter", labels)
-    selected_shelter_name = ranked_shelters[labels.index(chosen)]["shelter_name"]
+    shelter_labels = [
+        f"#{index + 1} {item['shelter_name']} · {item['suitability_score']:.0f}/100 · {int(item['available_capacity']):,} spaces"
+        for index, item in enumerate(ranked_shelters[:8])
+    ]
+    chosen_shelter = st.selectbox("Route to qualified shelter", shelter_labels)
+    selected_shelter_name = ranked_shelters[shelter_labels.index(chosen_shelter)]["shelter_name"]
 
 render_kpi_strip([
     ("Risk", f"{selected['risk_score']:.1f}/100", str(selected["risk_level"])),
-    ("Population", f"{int(selected['population']):,}", "Selected habitation"),
-    ("Priority", selected["relocation_priority"], "Relocation decision support"),
+    ("Population", f"{int(selected['population']):,}", "Selected location"),
+    ("Priority", selected["relocation_priority"], "Decision-support priority"),
     ("Safe candidates", len(ranked_shelters), "Passed safety + capacity gates"),
+    ("Evidence", f"{float(selected.get('hazard_data_completeness', 0) or 0):.0f}%", "Hazard evidence completeness"),
 ])
 
-if operational and hazard_data is None and hazard_profile == "stored":
-    st.info("No calibrated GeoJSON is active; this view is using the stored hazard_score supplied with the operational habitation dataset.")
-elif operational and hazard_data is not None:
-    source_label = hazard_source.get("label", "Calibrated hazard GeoJSON") if hazard_source else "Calibrated hazard GeoJSON"
-    source_mode = hazard_source.get("mode", "SESSION") if hazard_source else "SESSION"
-    st.success(f"Calibrated operational hazard layer active: {source_label} · {source_mode}")
-
 if is_offline:
-    st.info("Offline map mode: internet basemap tiles and remote GIS overlays are disabled. Red-zone vectors, shelter markers and local/fallback route geometry remain available.")
+    st.info("Offline field mode: remote basemap/GIS calls are disabled; local vectors, qualified shelters and cached/fallback routing remain available.")
 
 map_center = [float(filtered["latitude"].mean()), float(filtered["longitude"].mean())]
-map_obj = folium.Map(location=map_center, zoom_start=10 if len(filtered) < 80 else 8, tiles=None, control_scale=True)
+map_obj = folium.Map(
+    location=map_center,
+    zoom_start=10 if len(filtered) < 80 else 8,
+    tiles=None,
+    control_scale=True,
+)
 if not is_offline:
-    folium.TileLayer(tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr="© OpenStreetMap contributors", name="OpenStreetMap", overlay=False, control=False, max_zoom=19).add_to(map_obj)
+    folium.TileLayer(
+        tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attr="© OpenStreetMap contributors",
+        name="OpenStreetMap",
+        overlay=False,
+        control=False,
+        max_zoom=19,
+    ).add_to(map_obj)
 
 if selected_bhuvan:
-    folium.WmsTileLayer(url=selected_bhuvan["service_url"], layers=selected_bhuvan["layer"], name=f"Bhuvan — {selected_bhuvan['label']}", fmt="image/png", transparent=True, overlay=True, control=True, show=True, version="1.1.1", attr="NRSC/ISRO Bhuvan").add_to(map_obj)
+    folium.WmsTileLayer(
+        url=selected_bhuvan["service_url"],
+        layers=selected_bhuvan["layer"],
+        name=f"Bhuvan — {selected_bhuvan['label']}",
+        fmt="image/png",
+        transparent=True,
+        overlay=True,
+        control=True,
+        show=True,
+        version="1.1.1",
+        attr="NRSC/ISRO Bhuvan",
+    ).add_to(map_obj)
 
 if show_red_zones:
     for row in filtered[filtered["risk_level"].isin(["HIGH", "CRITICAL"])].to_dict(orient="records"):
         color = RISK_COLORS.get(row["risk_level"], "#dc3545")
+        selected_row = row["name"] == selected_name
         folium.Circle(
             [float(row["latitude"]), float(row["longitude"])],
-            radius=_red_zone_radius_m(row["risk_score"]), color=color, weight=3 if row["name"] == selected_name else 2,
-            fill=True, fill_color=color, fill_opacity=.14 if row["name"] == selected_name else .09,
+            radius=_red_zone_radius_m(row["risk_score"]),
+            color=color,
+            weight=3 if selected_row else 2,
+            fill=True,
+            fill_color=color,
+            fill_opacity=.16 if selected_row else .08,
             tooltip=f"{row['name']} · {row['risk_level']} · {row['risk_score']:.1f}/100",
         ).add_to(map_obj)
 
 for row in filtered.to_dict(orient="records"):
+    selected_row = row["name"] == selected_name
     radius = max(6, min(18, 5 + float(row["population"]) / 350)) if show_population else 8
     color = RISK_COLORS.get(row["risk_level"], "#6c757d")
-    popup = f"<b>{row['name']}</b><br>Risk: {row['risk_score']:.1f} / {row['risk_level']}<br>Hazard: {row.get('hazard_score', 0):.1f}<br>Population: {int(row['population']):,}<br>Priority: {row['relocation_priority']}"
-    folium.CircleMarker([row["latitude"], row["longitude"]], radius=radius, popup=folium.Popup(popup, max_width=320), tooltip=f"{row['name']} — {row['risk_level']}", color="#111827" if row["name"] == selected_name else "#ffffff", fill=True, fill_color=color, fill_opacity=.96, weight=4 if row["name"] == selected_name else 2).add_to(map_obj)
+    folium.CircleMarker(
+        [row["latitude"], row["longitude"]],
+        radius=radius,
+        popup=folium.Popup(
+            f"<b>{row['name']}</b><br>Risk {row['risk_score']:.1f}/100 · {row['risk_level']}<br>Population {int(row['population']):,}<br>Priority {row['relocation_priority']}",
+            max_width=320,
+        ),
+        tooltip=f"{row['name']} — {row['risk_level']}",
+        color="#07101A" if selected_row else "#ffffff",
+        fill=True,
+        fill_color=color,
+        fill_opacity=.98,
+        weight=4 if selected_row else 2,
+    ).add_to(map_obj)
 
 if show_shelters:
-    for i, shelter in enumerate(ranked_shelters):
+    for index, shelter in enumerate(ranked_shelters):
         target = shelter["shelter_name"] == selected_shelter_name
-        folium.Marker([float(shelter["latitude"]), float(shelter["longitude"])], tooltip=f"Safe shelter #{i+1}: {shelter['shelter_name']}", popup=folium.Popup(f"<b>{shelter['shelter_name']}</b><br>Safety: {shelter['safety_score']:.0f}/100<br>Available: {int(shelter['available_capacity']):,}<br>Suitability: {shelter['suitability_score']:.1f}/100", max_width=320), icon=folium.Icon(color="green" if target else "lightgreen", icon="home")).add_to(map_obj)
+        folium.Marker(
+            [float(shelter["latitude"]), float(shelter["longitude"])],
+            tooltip=f"Qualified shelter #{index + 1}: {shelter['shelter_name']}",
+            popup=folium.Popup(
+                f"<b>{shelter['shelter_name']}</b><br>Safety {shelter['safety_score']:.0f}/100<br>Available {int(shelter['available_capacity']):,}<br>Suitability {shelter['suitability_score']:.1f}/100",
+                max_width=320,
+            ),
+            icon=folium.Icon(color="green" if target else "lightgreen", icon="home"),
+        ).add_to(map_obj)
 
 route = None
-recommended = next((s for s in ranked_shelters if s["shelter_name"] == selected_shelter_name), ranked_shelters[0] if ranked_shelters else None)
+recommended = next(
+    (item for item in ranked_shelters if item["shelter_name"] == selected_shelter_name),
+    ranked_shelters[0] if ranked_shelters else None,
+)
 if show_route and recommended:
     origin = (float(selected["latitude"]), float(selected["longitude"]))
     destination = (float(recommended["latitude"]), float(recommended["longitude"]))
@@ -204,41 +258,49 @@ if show_route and recommended:
     geometry = route.get("route_geometry") or [list(origin), list(destination)]
     road_mode = route.get("routing_mode") in {"cached_osm_graph", "osrm_live", "osrm_cached"}
     if road_mode:
-        folium.PolyLine(geometry, color="#ffffff", weight=10, opacity=.75).add_to(map_obj)
-        folium.PolyLine(geometry, color="#1565c0", weight=6, opacity=.98, tooltip="Safe-shelter road route").add_to(map_obj)
+        folium.PolyLine(geometry, color="#ffffff", weight=9, opacity=.65).add_to(map_obj)
+        folium.PolyLine(geometry, color="#5EA7FF", weight=5, opacity=.98, tooltip="Qualified-shelter route").add_to(map_obj)
     else:
-        folium.PolyLine(geometry, color="#5f6368", weight=3, dash_array="10,10", tooltip="Straight-line fallback").add_to(map_obj)
-    folium.Marker(list(origin), tooltip=f"Origin: {selected['name']}", icon=folium.Icon(color="red", icon="warning-sign")).add_to(map_obj)
+        folium.PolyLine(geometry, color="#9AA7B5", weight=3, dash_array="9,9", tooltip="Straight-line fallback").add_to(map_obj)
     map_obj.fit_bounds([list(origin), list(destination)], padding=(70, 70))
 
 folium.LayerControl(collapsed=True).add_to(map_obj)
-left, right = st.columns([2.15, 1], gap="large")
-with left:
-    st_folium(map_obj, height=680, width=1100, returned_objects=[])
-    st.caption("HIGH/CRITICAL circles are decision-support visualization areas, not statutory hazard boundaries. Route provenance is shown explicitly.")
-with right:
-    st.markdown("### Selected profile")
-    st.subheader(selected["name"])
+
+map_col, detail_col = st.columns([2.5, 1], gap="large")
+with map_col:
+    st_folium(map_obj, height=720, width=1200, returned_objects=[])
+    st.caption("HIGH/CRITICAL circles are decision-support visualization areas, not statutory hazard boundaries. Route provenance remains explicit.")
+with detail_col:
+    st.markdown("### Selected location")
+    st.markdown(f"## {selected['name']}")
     render_risk_badge(selected["risk_level"])
-    st.metric("Hazard Score", f"{selected['hazard_score']:.1f}/100")
     st.write(f"**Drivers:** {selected['risk_drivers']}")
-    st.markdown("### Safe shelter candidates")
+
     if ranked_shelters:
-        for i, shelter in enumerate(ranked_shelters[:5]):
-            marker = "→" if shelter["shelter_name"] == selected_shelter_name else "•"
-            st.write(f"{marker} **#{i+1} {shelter['shelter_name']}** · capacity {int(shelter['available_capacity']):,} · suitability {shelter['suitability_score']:.1f}")
-        if len(ranked_shelters) > 5:
-            st.caption(f"{len(ranked_shelters) - 5} additional qualified candidate(s) available in the Relocation Planner.")
+        st.markdown("### Best qualified shelter")
+        render_source_card(
+            recommended["shelter_name"],
+            f"{recommended['suitability_score']:.1f}/100 suitability",
+            f"{int(recommended['available_capacity']):,} available · safety {recommended['safety_score']:.0f}/100",
+        )
+        if route:
+            route_mode = str(route.get("routing_mode", "unknown"))
+            st.write(f"**Route:** {route['distance_km']:.2f} km · `{route_mode}`")
+            if route.get("travel_time_min") is not None:
+                st.write(f"**Travel estimate:** {route['travel_time_min']:.1f} min")
+            if route.get("route_note"):
+                st.caption(str(route["route_note"]))
+        st.page_link("pages/4_Relocation_Planner.py", label="Build relocation plan →", use_container_width=True)
     else:
-        st.warning("No shelter passes safety and capacity gates.")
-    if route and recommended:
-        st.markdown("### Route")
-        st.success(f"{selected['name']} → {recommended['shelter_name']}")
-        st.write(f"**{route['distance_km']:.2f} km** · `{route.get('routing_mode')}`")
-        if route.get("travel_time_min") is not None:
-            st.write(f"Estimated travel time: **{route['travel_time_min']:.1f} min**")
-        route_note = str(route.get("route_note") or "").strip()
-        if route_note:
-            st.caption(route_note)
+        st.error("No shelter passes the safety and available-capacity gates for this location.")
+
+    st.markdown("### Evidence")
+    if operational and hazard_data is not None:
+        st.success(f"Calibrated hazard source: {hazard_source.get('label', 'GeoJSON') if hazard_source else 'GeoJSON'}")
+    elif operational and hazard_profile == "stored":
+        st.info("Using stored operational hazard score; no calibrated GeoJSON is active.")
+    else:
+        st.caption("Demo/synthetic hazard context is clearly separated from authoritative operational evidence.")
+    st.page_link("pages/3_Risk_Analysis.py", label="Explain this risk →", use_container_width=True)
 
 render_disclaimer()

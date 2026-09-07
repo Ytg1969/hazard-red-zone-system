@@ -1,5 +1,4 @@
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from src.batch_relocation import plan_batch_relocation
@@ -19,11 +18,15 @@ from src.ui_theme import (
     render_kpi_strip,
     render_page_header,
     render_risk_badge,
+    render_source_card,
 )
 
-st.set_page_config(page_title="Relocation Planner", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="Relocation", layout="wide", initial_sidebar_state="auto")
 inject_global_css()
-render_page_header("Relocation Planner", "Choose a safe relocation site, verify capacity and route evidence, then export a reviewable action plan.")
+render_page_header(
+    "Relocation",
+    "Answer one operational question: can the affected population move to verified safe capacity without overbooking shelters?",
+)
 
 is_offline = offline_mode()
 resolved = None
@@ -36,7 +39,7 @@ operational = bool(resolved)
 hazard_source = None
 if operational:
     workspace = resolved["payload"]
-    mode = workspace.get("habitation_mode", "UNVERIFIED")
+    mode = str(workspace.get("habitation_mode", "UNVERIFIED")).upper()
     if mode in {"LIVE", "CACHED", "DEMO"}:
         render_data_mode_indicator(mode)
     else:
@@ -44,7 +47,12 @@ if operational:
     area_label = workspace.get("label", "Operational area")
     habitations_raw = resolved["habitations"]
     shelters_raw = resolved["shelters"]
-    hazard_profile = st.sidebar.selectbox("Analytical hazard profile", ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"], index=0, format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title())
+    hazard_profile = st.sidebar.selectbox(
+        "Hazard profile",
+        ["stored", "combined", "flood", "cyclone", "landslide", "earthquake", "drought"],
+        index=0,
+        format_func=lambda v: "Stored / calibrated GIS" if v == "stored" else v.title(),
+    )
     hazard_data = None
     if hazard_profile == "stored":
         try:
@@ -54,8 +62,7 @@ if operational:
         except Exception as exc:
             st.error(f"Configured operational hazard layer could not be loaded: {exc}")
             st.stop()
-    st.sidebar.success(f"Operational workspace: {area_label}")
-    st.sidebar.page_link("pages/9_Operational_Data.py", label="Manage operational data")
+    st.sidebar.success(f"Scope: {area_label}")
 else:
     workspace = None
     render_data_mode_indicator("DEMO")
@@ -65,203 +72,224 @@ else:
     hazard_data = load_demo_hazards()
 
 try:
-    habitations = enrich_habitations(habitations_raw, hazard_data=hazard_data, hazard_type=hazard_profile, add_coordination_zones=not operational)
+    habitations = enrich_habitations(
+        habitations_raw,
+        hazard_data=hazard_data,
+        hazard_type=hazard_profile,
+        add_coordination_zones=not operational,
+    )
     shelters = enrich_shelters(shelters_raw)
 except Exception as exc:
     st.error(f"Unable to prepare relocation data: {exc}")
     render_disclaimer()
     st.stop()
 
-st.markdown("### 1 · Select affected habitation")
-selected_name = st.selectbox("Habitation", habitations.sort_values("risk_score", ascending=False)["name"].tolist())
+ordered = habitations.sort_values("risk_score", ascending=False)
+selected_name = st.selectbox("Affected location", ordered["name"].tolist())
 habitation = habitations[habitations["name"] == selected_name].iloc[0].to_dict()
+risk = calculate_risk(habitation)
+
 local_shelters = shelters
 if not operational and habitation.get("demo_city") and "demo_city" in shelters.columns:
     local_shelters = shelters[shelters["demo_city"] == habitation["demo_city"]].copy()
-risk = calculate_risk(habitation)
 
 data_mode = workspace.get("habitation_mode", "UNVERIFIED") if operational else "DEMO"
 if data_mode not in {"LIVE", "CACHED", "DEMO"}:
     data_mode = "DEMO"
 
-render_kpi_strip([
-    ("Population", f"{int(habitation['population']):,}", "Selected habitation"),
-    ("Risk Score", f"{risk['risk_score']:.1f}/100", risk["risk_level"]),
-    ("Relocation Priority", habitation["relocation_priority"], "Decision-support priority"),
-])
-render_risk_badge(risk["risk_level"])
-st.caption(f"Operational scope: **{area_label}** · Hazard profile: **{hazard_profile.replace('_', ' ').title()}**")
-if operational and hazard_source:
-    st.caption(f"Calibrated hazard source: **{hazard_source.get('label', 'GeoJSON')}** · {hazard_source.get('mode', 'SESSION')}")
-
-st.markdown("### 2 · Compare qualified relocation sites")
-use_live_routing = st.checkbox(
-    "Use live OSRM road distance when a local cached road graph is unavailable",
-    value=False,
-    disabled=is_offline,
-    help="Road routing improves distance/travel-time evidence but does not include live traffic, road closures or hazard avoidance. If unavailable, the planner falls back visibly to cached/straight-line distance.",
-)
-if is_offline:
-    st.caption("Offline field mode disables live OSRM. A local cached road graph is still used when configured; otherwise route distance falls back explicitly.")
+with st.sidebar:
+    with st.expander("Routing", expanded=False):
+        use_live_routing = st.checkbox(
+            "Use live OSRM if cached road data is unavailable",
+            value=False,
+            disabled=is_offline,
+            help="Routing is advisory and never overrides shelter safety/capacity gates.",
+        )
+        if is_offline:
+            st.caption("Offline mode uses configured/cached routing when available and otherwise shows explicit fallback distance.")
 
 ranked = rank_shelters(
     habitation,
     local_shelters.to_dict(orient="records"),
     allow_live_routing=use_live_routing,
 )
+allocation = allocate_population(habitation, local_shelters.to_dict(orient="records"))
+
+required = int(allocation["required_population"])
+allocated = int(allocation["allocated_population"])
+deficit = int(allocation["remaining_deficit"])
+coverage = 100.0 if required <= 0 else min(100.0, allocated / required * 100.0)
+
+st.caption(f"{area_label} · {hazard_profile.replace('_', ' ').title()} · safety and available capacity remain hard gates")
+render_kpi_strip([
+    ("Affected population", f"{int(habitation['population']):,}", habitation["name"]),
+    ("Risk", f"{risk['risk_score']:.1f}/100", risk["risk_level"]),
+    ("Required move", f"{required:,}", "Population requiring allocation"),
+    ("Safe allocation", f"{allocated:,}", f"{coverage:.0f}% covered"),
+    ("Remaining Deficit", f"{deficit:,}", "Explicit unmet safe capacity" if deficit else "Current qualified capacity covers demand"),
+])
+
+st.markdown("## Can everyone be moved safely?")
+status_left, status_right = st.columns([1.55, 1], gap="large")
+with status_left:
+    st.markdown(f"### {habitation['name']}")
+    render_risk_badge(risk["risk_level"])
+    if deficit > 0:
+        st.error(
+            f"No. Qualified shelters can currently absorb {allocated:,} of {required:,} people. "
+            f"The remaining deficit is {deficit:,}; the planner will not overfill a shelter."
+        )
+    else:
+        st.success(
+            f"Yes. The current qualified shelter set can allocate all {required:,} people without exceeding available capacity."
+        )
+    st.progress(max(0.0, min(1.0, coverage / 100.0)), text=f"Safe allocation coverage {coverage:.0f}%")
+with status_right:
+    render_source_card(
+        "Hard gate",
+        "Safety + capacity",
+        "Sites that fail safety or usable-capacity checks do not enter the recommendation list. Unknown evidence is not silently converted to zero.",
+    )
+    st.page_link("pages/2_Red_Zone_Map.py", label="View location and route on map →", use_container_width=True)
+
 if not ranked:
     st.error("No relocation site currently passes the safety and available-capacity gates.")
+    st.page_link("pages/13_Briefing.py", label="Open incident briefing →", use_container_width=True)
     render_disclaimer()
     st.stop()
+
 ranked_df = pd.DataFrame(ranked)
-
-compact_cols = [c for c in [
-    "shelter_name",
-    "suitability_score",
-    "distance_km",
-    "available_capacity",
-    "limiting_resource_label",
-    "route_status",
-] if c in ranked_df.columns]
-st.dataframe(ranked_df[compact_cols].head(8), width="stretch", hide_index=True)
-if len(ranked_df) > 8:
-    st.caption(f"Showing the top 8 of {len(ranked_df)} qualified sites. Full evidence remains available below.")
-
-road_modes = {"cached_osm_graph", "osrm_live", "osrm_cached"}
-road_candidate_count = sum(1 for item in ranked if item.get("routing_mode") in road_modes)
-if road_candidate_count:
-    st.success(f"Road-network distance available for {road_candidate_count} of {len(ranked)} qualified site(s).")
-else:
-    st.warning("No road-network route is active for the qualified sites; current ranking uses explicit straight-line fallback distance.")
-
 recommended = ranked[0]
-st.markdown("### 3 · Primary recommendation")
-left, right = st.columns([1, 1.35], gap="large")
-with left:
-    st.success(f"Recommended primary site: {recommended['shelter_name']}")
-    travel_time = recommended.get("travel_time_min")
+travel_time = recommended.get("travel_time_min")
+
+st.markdown("## Primary recommendation")
+recommendation_left, allocation_right = st.columns([1.1, 1], gap="large")
+with recommendation_left:
+    st.success(f"Recommended qualified site · {recommended['shelter_name']}")
     recommendation_metrics = [
         ("Suitability", f"{recommended['suitability_score']:.1f}/100", "Qualified-site score"),
         ("Distance", f"{recommended['distance_km']:.2f} km", str(recommended.get("routing_mode", "unknown"))),
-        ("Available Capacity", f"{int(recommended['available_capacity']):,}", "After limiting-resource constraints"),
-        ("Capacity Use", f"{recommended.get('capacity_utilization_pct', 0):.1f}%", "At current assignment"),
+        ("Available capacity", f"{int(recommended['available_capacity']):,}", "After occupancy/resource constraints"),
+        ("Safety", f"{float(recommended.get('safety_score', 0)):.0f}/100", str(recommended.get("capacity_validation_status", "UNKNOWN"))),
     ]
     if travel_time is not None:
-        recommendation_metrics.append(("Road Travel Time", f"{float(travel_time):.1f} min", str(recommended.get("route_status", "UNKNOWN"))))
+        recommendation_metrics.append(
+            ("Travel estimate", f"{float(travel_time):.1f} min", str(recommended.get("route_status", "UNKNOWN")))
+        )
     render_kpi_strip(recommendation_metrics)
-    st.caption(
-        f"Route provenance: **{recommended.get('routing_mode', 'unknown')}** · "
-        f"{recommended.get('route_status', 'UNKNOWN')}"
+
+    limiting_label = recommended.get("limiting_resource_label", "Unknown")
+    limiting_capacity = int(float(recommended.get("limiting_capacity", recommended.get("effective_capacity", 0)) or 0))
+    render_source_card(
+        "Limiting resource",
+        limiting_label,
+        f"Current limiting capacity: {limiting_capacity:,} people. Capacity evidence completeness {recommended.get('capacity_evidence_completeness_pct', 0):.0f}%.",
     )
     route_note = str(recommended.get("route_note") or "").strip()
     if route_note:
         st.caption(route_note)
     if recommended.get("route_stale"):
-        st.warning("The selected route is using cached routing data because the latest live refresh was unavailable.")
-    st.caption(
-        f"Capacity evidence: **{recommended['capacity_validation_status']}** · "
-        f"{recommended.get('capacity_evidence_completeness_pct', 0):.1f}% resource evidence complete"
-    )
-    st.info(
-        f"Current limiting factor: **{recommended.get('limiting_resource_label', 'Unknown')}** "
-        f"at **{int(float(recommended.get('limiting_capacity', recommended['effective_capacity']))):,} people**."
-    )
-    missing = recommended.get("missing_resource_fields") or []
-    if missing:
-        st.warning("Missing capacity evidence: " + ", ".join(str(value).replace("_capacity", "").replace("_", " ").title() for value in missing))
-with right:
-    st.markdown("#### Population allocation")
-    allocation = allocate_population(habitation, local_shelters.to_dict(orient="records"))
+        st.warning("This route uses cached routing data because a fresher route was unavailable.")
+
+with allocation_right:
+    st.markdown("### Population allocation")
     render_kpi_strip([
-        ("Required", f"{allocation['required_population']:,}", "Population requiring allocation"),
-        ("Allocated", f"{allocation['allocated_population']:,}", "Assigned to qualified sites"),
-        ("Remaining Deficit", f"{allocation['remaining_deficit']:,}", "Never hidden or overfilled"),
+        ("Required", f"{required:,}", "Selected location"),
+        ("Allocated", f"{allocated:,}", "Across qualified sites"),
+        ("Remaining Deficit", f"{deficit:,}", "Never hidden or overfilled"),
     ])
     if allocation["allocations"]:
-        st.dataframe(pd.DataFrame(allocation["allocations"]), width="stretch", hide_index=True)
-    if allocation["remaining_deficit"] > 0:
-        st.warning("Safe capacity is insufficient; the deficit remains explicit rather than overfilling a site.")
-    else:
-        st.success("The current safe-site set can accommodate the full habitation population.")
+        allocation_df = pd.DataFrame(allocation["allocations"])
+        st.dataframe(allocation_df, width="stretch", hide_index=True)
+    if deficit:
+        st.warning("Additional verified safe capacity is required before the full population can be accommodated.")
 
-with st.expander("Compare qualified sites visually", expanded=False):
-    visual_left, visual_right = st.columns(2, gap="large")
-    with visual_left:
-        st.bar_chart(ranked_df.head(6).set_index("shelter_name")["available_capacity"])
-        st.caption("Available capacity after limiting-resource and occupancy constraints.")
-    with visual_right:
-        fig = px.bar(ranked_df.head(5), x="shelter_name", y="suitability_score", title="Top relocation-site suitability", labels={"shelter_name": "Site", "suitability_score": "Suitability / 100"})
-        st.plotly_chart(fig, width="stretch")
-
-with st.expander("Detailed site evidence", expanded=False):
-    detail_cols = [c for c in [
+st.markdown("## Qualified shelter shortlist")
+short_cols = [
+    column
+    for column in [
         "shelter_name",
         "suitability_score",
         "distance_km",
         "travel_time_min",
-        "route_status",
-        "routing_mode",
+        "available_capacity",
         "safety_score",
-        "accessibility_score",
-        "available_capacity",
         "limiting_resource_label",
-        "capacity_evidence_completeness_pct",
-        "capacity_utilization_pct",
-        "capacity_validation_status",
-    ] if c in ranked_df.columns]
-    st.dataframe(ranked_df[detail_cols], width="stretch", hide_index=True)
+        "route_status",
+    ]
+    if column in ranked_df.columns
+]
+st.dataframe(
+    ranked_df[short_cols].head(8),
+    width="stretch",
+    hide_index=True,
+    column_config={
+        "suitability_score": st.column_config.ProgressColumn("Suitability", min_value=0, max_value=100, format="%.1f"),
+        "available_capacity": st.column_config.NumberColumn("Available", format=",%d"),
+        "distance_km": st.column_config.NumberColumn("Distance km", format="%.2f"),
+    },
+)
 
-with st.expander("Carrying-capacity evidence across qualified sites", expanded=False):
-    evidence_cols = [c for c in [
-        "shelter_name",
-        "effective_capacity",
-        "available_capacity",
-        "limiting_resource_label",
-        "limiting_capacity",
-        "capacity_utilization_pct",
-        "capacity_evidence_completeness_pct",
-        "capacity_validation_status",
-    ] if c in ranked_df.columns]
-    st.dataframe(ranked_df[evidence_cols], width="stretch", hide_index=True)
+road_modes = {"cached_osm_graph", "osrm_live", "osrm_cached"}
+road_candidate_count = sum(1 for item in ranked if item.get("routing_mode") in road_modes)
+if road_candidate_count:
+    st.caption(f"Road-network distance is available for {road_candidate_count} of {len(ranked)} qualified site(s).")
+else:
+    st.warning("Qualified sites currently use explicit straight-line fallback distance; no road-network route is active.")
+
+with st.expander("Site evidence & route provenance", expanded=False):
+    detail_cols = [
+        column
+        for column in [
+            "shelter_name",
+            "suitability_score",
+            "safety_score",
+            "accessibility_score",
+            "effective_capacity",
+            "available_capacity",
+            "limiting_resource_label",
+            "limiting_capacity",
+            "capacity_evidence_completeness_pct",
+            "capacity_validation_status",
+            "distance_km",
+            "travel_time_min",
+            "routing_mode",
+            "route_status",
+            "route_stale",
+            "route_note",
+        ]
+        if column in ranked_df.columns
+    ]
+    st.dataframe(ranked_df[detail_cols].astype(str), width="stretch", hide_index=True)
     st.caption(
-        "VALIDATED means water, sanitation and access/logistics sub-capacities are all known. "
-        "PARTIAL uses the minimum known constraint. UNVALIDATED falls back to total physical capacity. Unknown evidence is never treated as zero."
+        "Routing is advisory. The system does not claim live traffic, road-closure awareness or hazard-avoiding routing unless a verified source explicitly provides it."
     )
 
-with st.expander("Route provenance across qualified sites", expanded=False):
-    route_cols = [c for c in [
-        "shelter_name", "distance_km", "travel_time_min", "routing_mode", "route_status", "route_stale", "route_note"
-    ] if c in ranked_df.columns]
-    st.dataframe(ranked_df[route_cols].astype(str), width="stretch", hide_index=True)
-    st.caption("Routing is advisory. The system currently does not claim live traffic, road-closure awareness or hazard-avoiding routing.")
-
-st.markdown("### 4 · Shared-capacity allocation")
-st.caption("All priority habitations share one capacity ledger. The planner never double-books capacity; demonstration city boundaries are used only in fallback mode.")
+st.markdown("## Shared capacity across all priority locations")
 batch = plan_batch_relocation(habitations, shelters)
 render_kpi_strip([
-    ("Priority Population", f"{batch['required_population']:,}", "Population included in batch plan"),
-    ("Batch Allocated", f"{batch['allocated_population']:,}", "Shared capacity ledger"),
-    ("Batch Deficit", f"{batch['remaining_deficit']:,}", "Explicit unmet safe capacity"),
+    ("Priority population", f"{batch['required_population']:,}", "Included in shared plan"),
+    ("Batch allocated", f"{batch['allocated_population']:,}", "One shared capacity ledger"),
+    ("Batch Deficit", f"{batch['remaining_deficit']:,}", "Explicit unmet capacity"),
 ])
 if batch["allocations"]:
-    st.dataframe(pd.DataFrame(batch["allocations"]), width="stretch", hide_index=True)
+    with st.expander("Shared allocation register", expanded=False):
+        st.dataframe(pd.DataFrame(batch["allocations"]), width="stretch", hide_index=True)
 if batch["unallocated"]:
-    st.warning("The batch plan preserves an explicit capacity deficit.")
-    st.dataframe(pd.DataFrame(batch["unallocated"]), width="stretch", hide_index=True)
+    st.warning("The shared plan contains an explicit capacity deficit; shelters are not double-booked.")
 
-with st.expander("Experimental global optimization comparison", expanded=False):
-    st.caption("Network-simplex only considers candidates that already pass safety/capacity gates. It is not an autonomous evacuation order.")
+with st.expander("Advanced optimization comparison", expanded=False):
     optimized = optimize_relocation_flow(habitations, shelters)
     render_kpi_strip([
         ("Required", f"{optimized['required_population']:,}", "Priority population"),
-        ("Globally Allocated", f"{optimized['allocated_population']:,}", "Network-simplex comparison"),
+        ("Optimized allocation", f"{optimized['allocated_population']:,}", "Qualified candidates only"),
         ("Deficit", f"{optimized['remaining_deficit']:,}", "Unmet qualified capacity"),
     ])
     if optimized["allocations"]:
         st.dataframe(pd.DataFrame(optimized["allocations"]), width="stretch", hide_index=True)
     st.caption(optimized.get("note", ""))
 
-st.markdown("### 5 · Draft administrative action plan")
+st.markdown("## Action plan")
 report_provenance = dict((workspace or {}).get("provenance") or {})
 if operational and hazard_source:
     report_provenance["hazard"] = {
@@ -269,6 +297,7 @@ if operational and hazard_source:
         "mode": hazard_source.get("mode", "SESSION"),
         "calibration_status": "Explicitly activated calibrated hazard source",
     }
+
 action_plan = generate_action_plan(
     habitation=habitation,
     risk=risk,
@@ -297,18 +326,31 @@ try:
 except Exception as exc:
     pdf_error = str(exc)
 
-export_left, export_right = st.columns(2)
+export_left, export_mid, export_right = st.columns(3, gap="small")
 with export_left:
-    st.download_button("Download Action Plan (Markdown)", data=action_plan.encode("utf-8"), file_name=f"{habitation['habitation_id']}_draft_action_plan.md", mime="text/markdown; charset=utf-8", width="stretch", key=f"markdown_download_{habitation['habitation_id']}")
-with export_right:
+    st.download_button(
+        "Download Markdown",
+        data=action_plan.encode("utf-8"),
+        file_name=f"{habitation['habitation_id']}_draft_action_plan.md",
+        mime="text/markdown; charset=utf-8",
+        use_container_width=True,
+        key=f"markdown_download_{habitation['habitation_id']}",
+    )
+with export_mid:
     if pdf_plan is not None:
-        st.download_button("Download Action Plan (PDF)", data=pdf_plan, file_name=f"{habitation['habitation_id']}_draft_action_plan.pdf", mime="application/pdf", width="stretch", key=f"pdf_download_{habitation['habitation_id']}")
-        st.caption(f"PDF ready · {len(pdf_plan) / 1024:.1f} KB")
+        st.download_button(
+            "Download PDF",
+            data=pdf_plan,
+            file_name=f"{habitation['habitation_id']}_draft_action_plan.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"pdf_download_{habitation['habitation_id']}",
+        )
     else:
-        st.error("PDF export could not be generated on this runtime.")
+        st.button("PDF unavailable", disabled=True, use_container_width=True)
         if pdf_error:
             st.caption(pdf_error)
+with export_right:
+    st.page_link("pages/13_Briefing.py", label="Open incident briefing →", use_container_width=True)
 
-with st.expander("Preview action plan"):
-    st.markdown(action_plan)
 render_disclaimer()

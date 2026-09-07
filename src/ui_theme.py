@@ -29,31 +29,38 @@ HAZARD_PROFILE_OPTIONS = {
     "Stored / GIS score": "stored",
 }
 
+# Keep the primary navigation focused on the five decisions a judge/operator
+# should understand during a short incident workflow. Older diagnostic pages
+# remain available under secondary tools rather than competing for attention.
 CORE_NAV = [
-    ("Overview", "app.py", "⌂"),
-    ("Operations", "pages/0_Operations_Hub.py", "◎"),
-    ("Red Zone Map", "pages/2_Red_Zone_Map.py", "◉"),
-    ("Risk Analysis", "pages/3_Risk_Analysis.py", "◒"),
+    ("Command", "app.py", "⌂"),
+    ("Hazard Map", "pages/2_Red_Zone_Map.py", "◉"),
+    ("Risk Intelligence", "pages/3_Risk_Analysis.py", "◒"),
     ("Relocation", "pages/4_Relocation_Planner.py", "⇢"),
-    ("Live Context", "pages/7_Live_Data_Context.py", "◌"),
-    ("Operational Data", "pages/9_Operational_Data.py", "▦"),
+    ("Briefing", "pages/13_Briefing.py", "▤"),
 ]
 
 MOBILE_NAV = [
-    ("Overview", "app.py", "⌂"),
-    ("Red Zones", "pages/2_Red_Zone_Map.py", "◉"),
+    ("Command", "app.py", "⌂"),
+    ("Map", "pages/2_Red_Zone_Map.py", "◉"),
     ("Relocate", "pages/4_Relocation_Planner.py", "⇢"),
-    ("Live", "pages/7_Live_Data_Context.py", "◌"),
+    ("Brief", "pages/13_Briefing.py", "▤"),
 ]
 
-TECH_NAV = [
+SECONDARY_NAV = [
+    ("Evidence Center", "pages/14_Evidence_Center.py"),
+    ("System Boundaries", "pages/15_About_System.py"),
+]
+
+DATA_TOOL_NAV = [
+    ("Operational Data", "pages/9_Operational_Data.py"),
+    ("Scenario Studio", "pages/5_Scenario_Studio.py"),
+    ("Live Context", "pages/7_Live_Data_Context.py"),
     ("System Readiness", "pages/8_System_Readiness.py"),
     ("GIS Source Inspector", "pages/10_GIS_Source_Inspector.py"),
     ("Hazard Calibration", "pages/11_Calibrated_Hazard_Source.py"),
     ("Schema Mapper", "pages/12_Schema_Mapper.py"),
     ("Methodology", "pages/6_Methodology.py"),
-    ("Scenario Studio", "pages/5_Scenario_Studio.py"),
-    ("Command Center", "pages/1_Command_Center.py"),
 ]
 
 
@@ -74,12 +81,15 @@ def _render_navigation() -> None:
                 "<div class='hz-runtime-note'>External source calls are disabled. Local planning remains available.</div>",
                 unsafe_allow_html=True,
             )
-        st.markdown('<div class="hz-nav-label">OPERATIONS</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hz-nav-label">DECISION FLOW</div>', unsafe_allow_html=True)
         for label, path, icon in CORE_NAV:
             st.page_link(path, label=f"{icon}  {label}", use_container_width=True)
         st.markdown('<div class="hz-nav-separator"></div>', unsafe_allow_html=True)
-        with st.expander("Technical tools", expanded=False):
-            for label, path in TECH_NAV:
+        st.markdown('<div class="hz-nav-label">EVIDENCE</div>', unsafe_allow_html=True)
+        for label, path in SECONDARY_NAV:
+            st.page_link(path, label=label, use_container_width=True)
+        with st.expander("Data & configuration", expanded=False):
+            for label, path in DATA_TOOL_NAV:
                 st.page_link(path, label=label, use_container_width=True)
         st.caption("Decision support · Source-aware · Capacity constrained")
 
