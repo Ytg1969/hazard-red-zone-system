@@ -55,12 +55,22 @@ def test_post_merge_streamlit_verifier_is_main_only_and_browser_aware():
 def test_public_verifier_covers_hazard_command_2_pages():
     workflow = VERIFIER.read_text(encoding="utf-8")
     required_routes = [
-        '("briefing", base + "/Briefing")',
-        '("evidence-center", base + "/Evidence_Center")',
-        '("system-boundaries", base + "/About_System")',
+        '("briefing", "/Briefing")',
+        '("evidence-center", "/Evidence_Center")',
+        '("system-boundaries", "/About_System")',
     ]
     for route in required_routes:
         assert route in workflow
+
+
+def test_public_verifier_rejects_unknown_page_redirects_and_waits_for_release_routes():
+    workflow = VERIFIER.read_text(encoding="utf-8")
+    assert "from urllib.parse import urlsplit" in workflow
+    assert "release_routes = [" in workflow
+    assert "for attempt in range(1, 61):" in workflow
+    assert "final_path != expected_path" in workflow
+    assert "resolved to {final_path} instead of expected route {expected_path}" in workflow
+    assert "Public Streamlit deployment did not register release routes" in workflow
 
 
 def test_auto_update_contract_does_not_weaken_analytical_safety():
