@@ -43,7 +43,7 @@ jobs:
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
 
-      - name: Browser-smoke public app pages
+      - name: Browser-smoke every public app page
         shell: bash
         run: |
           python - <<'PY'
@@ -53,9 +53,19 @@ jobs:
           base = os.environ["STREAMLIT_APP_URL"].rstrip("/")
           pages = [
               ("home", base + "/"),
+              ("operations-hub", base + "/Operations_Hub"),
+              ("command-center", base + "/Command_Center"),
               ("red-zone-map", base + "/Red_Zone_Map"),
               ("risk-analysis", base + "/Risk_Analysis"),
               ("relocation-planner", base + "/Relocation_Planner"),
+              ("scenario-studio", base + "/Scenario_Studio"),
+              ("methodology", base + "/Methodology"),
+              ("live-data-context", base + "/Live_Data_Context"),
+              ("system-readiness", base + "/System_Readiness"),
+              ("operational-data", base + "/Operational_Data"),
+              ("gis-source-inspector", base + "/GIS_Source_Inspector"),
+              ("calibrated-hazard-source", base + "/Calibrated_Hazard_Source"),
+              ("schema-mapper", base + "/Schema_Mapper"),
           ]
           fatal_markers = [
               "ModuleNotFoundError",
@@ -74,7 +84,7 @@ jobs:
               failures = []
               for label, url in pages:
                   response = page.goto(url, wait_until="domcontentloaded", timeout=90000)
-                  page.wait_for_timeout(8000)
+                  page.wait_for_timeout(6000)
                   status = response.status if response else 0
                   final_url = page.url
                   body = page.locator("body").inner_text(timeout=30000)
