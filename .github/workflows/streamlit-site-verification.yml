@@ -16,6 +16,7 @@ jobs:
 
     env:
       STREAMLIT_APP_URL: https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app
+      EXPECTED_RELEASE: HC2-2026-09-07-r2
 
     steps:
       - name: Wake and wait for public Streamlit endpoint
@@ -53,6 +54,8 @@ jobs:
           from playwright.sync_api import sync_playwright
 
           base = os.environ["STREAMLIT_APP_URL"].rstrip("/")
+          expected_release = os.environ["EXPECTED_RELEASE"]
+          release_text = f"Release {expected_release}"
           pages = [
               ("home", "/"),
               ("operations-hub", "/Operations_Hub"),
@@ -96,11 +99,22 @@ jobs:
               browser = p.chromium.launch(headless=True)
               page = browser.new_page(viewport={"width": 1440, "height": 1000})
 
-              # Streamlit resolves an unknown page client-side after the initial
-              # document arrives. Give the router time to settle before deciding
-              # that a newly introduced route is actually registered.
+              # Prove Community Cloud is serving this exact main-app release, not
+              # merely a healthy but stale container. Then require the new routes.
               for attempt in range(1, 26):
                   pending = []
+
+                  home_response = page.goto(base + "/", wait_until="domcontentloaded", timeout=60000)
+                  page.wait_for_timeout(6000)
+                  home_status = home_response.status if home_response else 0
+                  home_url = page.url
+                  home_body = page.locator("body").inner_text(timeout=30000)
+                  home_auth_hits = [marker for marker in auth_markers if marker in home_url]
+                  if home_status >= 400 or home_auth_hits or release_text not in home_body:
+                      pending.append(
+                          f"home: HTTP {home_status}, expected release marker {release_text!r} not confirmed"
+                      )
+
                   for label, path in release_routes:
                       response = page.goto(base + path, wait_until="domcontentloaded", timeout=60000)
                       page.wait_for_timeout(6000)
@@ -112,14 +126,14 @@ jobs:
                       if status >= 400 or auth_hits or final_path != expected_path:
                           pending.append(f"{label}: HTTP {status}, final path {final_path}")
                   if not pending:
-                      print(f"Release routes registered after {attempt} attempt(s).")
+                      print(f"Exact release and routes registered after {attempt} attempt(s).")
                       break
                   if attempt == 25:
                       browser.close()
                       raise SystemExit(
-                          "Public Streamlit deployment did not register release routes: " + " | ".join(pending)
+                          "Public Streamlit deployment did not register the expected release: " + " | ".join(pending)
                       )
-                  print(f"WAIT release routes attempt {attempt}/25: " + " | ".join(pending))
+                  print(f"WAIT exact release attempt {attempt}/25: " + " | ".join(pending))
                   page.wait_for_timeout(10000)
 
               failures = []
@@ -142,9 +156,17 @@ jobs:
                       failures.append(
                           f"{label}: resolved to {final_path} instead of expected route {expected_path}"
                       )
+                  if label == "home" and release_text not in body:
+                      failures.append(f"home: missing exact release marker {release_text}")
                   if hits:
                       failures.append(f"{label}: {', '.join(hits)}")
-                  if status < 400 and not auth_hits and final_path == expected_path and not hits:
+                  if (
+                      status < 400
+                      and not auth_hits
+                      and final_path == expected_path
+                      and not hits
+                      and (label != "home" or release_text in body)
+                  ):
                       print(
                           f"PASS {label}: HTTP {status}, route {final_path}, no fatal Streamlit error markers"
                       )
