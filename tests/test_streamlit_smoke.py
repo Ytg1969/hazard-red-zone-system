@@ -7,8 +7,6 @@ from streamlit.testing.v1 import AppTest
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = ROOT / "app.py"
 CHILD_PAGES = [
-    "pages/0_Operations_Hub.py",
-    "pages/1_Command_Center.py",
     "pages/2_Red_Zone_Map.py",
     "pages/3_Risk_Analysis.py",
     "pages/4_Relocation_Planner.py",
@@ -20,10 +18,11 @@ CHILD_PAGES = [
     "pages/10_GIS_Source_Inspector.py",
     "pages/11_Calibrated_Hazard_Source.py",
     "pages/12_Schema_Mapper.py",
+    "pages/13_Briefing.py",
+    "pages/14_Evidence_Center.py",
+    "pages/15_About_System.py",
 ]
 STRICT_MODE_PAGES = [
-    "pages/0_Operations_Hub.py",
-    "pages/1_Command_Center.py",
     "pages/2_Red_Zone_Map.py",
     "pages/3_Risk_Analysis.py",
     "pages/4_Relocation_Planner.py",
@@ -32,13 +31,14 @@ STRICT_MODE_PAGES = [
     "pages/8_System_Readiness.py",
     "pages/9_Operational_Data.py",
     "pages/12_Schema_Mapper.py",
+    "pages/13_Briefing.py",
 ]
 OFFLINE_CORE_PAGES = [
-    "pages/0_Operations_Hub.py",
     "pages/2_Red_Zone_Map.py",
     "pages/4_Relocation_Planner.py",
     "pages/7_Live_Data_Context.py",
     "pages/9_Operational_Data.py",
+    "pages/13_Briefing.py",
 ]
 
 
