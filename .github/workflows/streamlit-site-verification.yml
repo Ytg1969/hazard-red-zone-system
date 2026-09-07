@@ -18,19 +18,22 @@ jobs:
       STREAMLIT_APP_URL: https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app
 
     steps:
-      - name: Wait for Streamlit health endpoint
+      - name: Wake and wait for public Streamlit endpoint
         shell: bash
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --max-time 20 "$STREAMLIT_APP_URL/_stcore/health" | grep -qi "ok"; then
-              echo "Public Streamlit health endpoint is ready."
+            root_code="$(curl -L --silent --show-error --max-time 30 -o /tmp/streamlit-root.html -w '%{http_code}' "$STREAMLIT_APP_URL/" || true)"
+            health_code="$(curl --silent --show-error --max-time 20 -o /tmp/streamlit-health.txt -w '%{http_code}' "$STREAMLIT_APP_URL/_stcore/health" || true)"
+            health_body="$(tr -d '\r\n' < /tmp/streamlit-health.txt 2>/dev/null || true)"
+            echo "Attempt $attempt/30: root=$root_code health=$health_code body=${health_body:-<empty>}"
+            if [[ "$root_code" =~ ^2[0-9][0-9]$ || "$root_code" =~ ^3[0-9][0-9]$ ]]; then
+              echo "Public Streamlit endpoint is reachable; continuing to browser smoke."
               exit 0
             fi
-            echo "Waiting for Streamlit deployment ($attempt/30)..."
             sleep 10
           done
-          echo "Public Streamlit deployment did not become healthy in time."
+          echo "Public Streamlit endpoint did not become reachable in time."
           exit 1
 
       - name: Install browser smoke dependencies
@@ -65,14 +68,17 @@ jobs:
               page = browser.new_page(viewport={"width": 1440, "height": 1000})
               failures = []
               for label, url in pages:
-                  page.goto(url, wait_until="domcontentloaded", timeout=90000)
+                  response = page.goto(url, wait_until="domcontentloaded", timeout=90000)
                   page.wait_for_timeout(8000)
+                  status = response.status if response else 0
                   body = page.locator("body").inner_text(timeout=30000)
                   hits = [marker for marker in fatal_markers if marker in body]
+                  if status >= 400:
+                      failures.append(f"{label}: HTTP {status}")
                   if hits:
                       failures.append(f"{label}: {', '.join(hits)}")
-                  else:
-                      print(f"PASS {label}: no fatal Streamlit error markers")
+                  if status < 400 and not hits:
+                      print(f"PASS {label}: HTTP {status}, no fatal Streamlit error markers")
               browser.close()
 
           if failures:
