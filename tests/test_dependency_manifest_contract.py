@@ -50,14 +50,20 @@ def test_production_requirements_are_exactly_pinned():
 def test_conda_manifest_matches_direct_production_versions():
     text = ENVIRONMENT.read_text(encoding="utf-8")
     for name, version in EXPECTED_DIRECT.items():
-        if name == "streamlit-folium":
-            assert f"- {name}=={version}" in text
-        else:
-            assert f"- {name}={version}" in text
+        assert f"- {name}=={version}" in text or f"- {name}={version}" in text
 
     assert "- python=3.12" in text
-    assert "- pytest=9.1.1" in text
+    assert "- pip" in text
+    assert "- pytest==9.1.1" in text or "- pytest=9.1.1" in text
     assert "scikit-learn" not in text
+
+
+def test_streamlit_conda_manifest_keeps_solver_minimal():
+    text = ENVIRONMENT.read_text(encoding="utf-8")
+    assert "installed from pinned PyPI wheels" in text
+    assert "  - pip:\n" in text
+    for name in EXPECTED_DIRECT:
+        assert f"      - {name}=={EXPECTED_DIRECT[name]}" in text
 
 
 def test_no_unpinned_direct_dependencies_remain():
