@@ -32,6 +32,7 @@ render_page_header(
     "Incident Command",
     "A single decision surface for risk, exposed population, safe capacity and the next review action.",
 )
+st.caption(f"Release {DEPLOYMENT_RELEASE}")
 
 resolved = None
 try:
@@ -103,7 +104,7 @@ coverage_pct = 100.0 if immediate <= 0 else min(100.0, available_capacity / imme
 render_context_bar(
     active_label,
     f"{hazard_profile.replace('_', ' ').title()} · {mode_label}",
-    f"Release {DEPLOYMENT_RELEASE}",
+    "COMMAND / DECISION FLOW",
 )
 if active_mode in {"LIVE", "CACHED", "DEMO"}:
     render_data_mode_indicator(active_mode)
