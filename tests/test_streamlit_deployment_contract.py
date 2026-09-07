@@ -2,10 +2,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+APP = ROOT / "app.py"
 CONTRACT = ROOT / "docs" / "streamlit_auto_update.md"
 PRODUCTION_GUIDE = ROOT / "docs" / "production_deployment.md"
 VERIFIER = ROOT / ".github" / "workflows" / "streamlit-site-verification.yml"
 PUBLIC_APP_URL = "https://hazard-red-zone-system-qmi7oeaai7ewky3bfmrnpr.streamlit.app"
+EXPECTED_RELEASE = "HC2-2026-09-07-r2"
 
 
 def test_public_streamlit_coordinates_are_pinned_to_main_app():
@@ -68,11 +70,23 @@ def test_public_verifier_rejects_unknown_page_redirects_and_waits_for_release_ro
     assert "from urllib.parse import urlsplit" in workflow
     assert "release_routes = [" in workflow
     assert "for attempt in range(1, 26):" in workflow
-    assert "Streamlit resolves an unknown page client-side" in workflow
     assert "page.wait_for_timeout(6000)" in workflow
     assert "final_path != expected_path" in workflow
     assert "resolved to {final_path} instead of expected route {expected_path}" in workflow
-    assert "Public Streamlit deployment did not register release routes" in workflow
+    assert "Public Streamlit deployment did not register the expected release" in workflow
+
+
+def test_public_verifier_proves_exact_main_app_release_marker():
+    app = APP.read_text(encoding="utf-8")
+    workflow = VERIFIER.read_text(encoding="utf-8")
+
+    assert f'DEPLOYMENT_RELEASE = "{EXPECTED_RELEASE}"' in app
+    assert 'st.caption(f"Release {DEPLOYMENT_RELEASE}")' in app
+    assert f"EXPECTED_RELEASE: {EXPECTED_RELEASE}" in workflow
+    assert 'expected_release = os.environ["EXPECTED_RELEASE"]' in workflow
+    assert 'release_text = f"Release {expected_release}"' in workflow
+    assert "release_text not in home_body" in workflow
+    assert 'label == "home" and release_text not in body' in workflow
 
 
 def test_auto_update_contract_does_not_weaken_analytical_safety():
