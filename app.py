@@ -16,6 +16,8 @@ from src.ui_theme import (
     render_source_card,
 )
 
+DEPLOYMENT_RELEASE = "HC2-2026-09-07-r2"
+
 st.set_page_config(
     page_title="Hazard Command",
     page_icon="HZ",
@@ -27,6 +29,7 @@ render_page_header(
     "Hazard Command",
     "One operational picture for danger, people, shelter capacity and the next safe action.",
 )
+st.caption(f"Release {DEPLOYMENT_RELEASE}")
 
 resolved = None
 try:
