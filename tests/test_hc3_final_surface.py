@@ -15,7 +15,7 @@ def test_hc3_final_surface_has_single_command_entrypoint():
 def test_hc3_final_release_identity_and_routes_are_consistent():
     app = APP.read_text(encoding="utf-8")
     verifier = VERIFIER.read_text(encoding="utf-8")
-    assert 'DEPLOYMENT_RELEASE = "HC3-2026-09-07-r2"' in app
-    assert "EXPECTED_RELEASE: HC3-2026-09-07-r2" in verifier
+    assert 'DEPLOYMENT_RELEASE = "HC5-2026-09-07-retro-r1"' in app
+    assert "EXPECTED_RELEASE: HC5-2026-09-07-retro-r1" in verifier
     for route in ["/Red_Zone_Map", "/Risk_Analysis", "/Relocation_Planner", "/Briefing", "/Evidence_Center", "/About_System"]:
         assert route in verifier
